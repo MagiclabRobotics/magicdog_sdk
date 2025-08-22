@@ -1,0 +1,83 @@
+# === [IDE Configuration Files] ===
+.vscode/
+.idea/
+.VSCodeCounter/
+.cache/
+
+# === [Build Outputs] ===
+build/
+build-*/
+cmake-build*/
+out/
+bin/
+_deps/
+
+# === [CMake Files] ===
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+# Makefile
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+*.ninja
+.ninja_deps
+.ninja_log
+rules.ninja
+
+# === [Compiler / Debugger Artifacts] ===
+*.obj
+*.o
+*.dll
+*.exe
+*.out
+*.dSYM/
+*.pdb
+*.idb
+
+# === [Temporary / Runtime Files] ===
+*.log
+log/
+logs/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~
+
+# === [Conan] ===
+conan.lock
+conanbuild/
+conanfile.txt.user
+conanfile.py.user
+*.conan/
+.conan/
+.conan_profile/
+
+# === [vcpkg] ===
+.vcpkg/
+vcpkg_installed/
+vcpkg_buildtrees/
+vcpkg_downloads/
+packages/
+installed/
+
+# === [System Files] ===
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# === [GitHub Actions / CI Cache] ===
+/.github/workflows/*.log
+.github/actions-cache/
+*.gcda
+*.gcno
+coverage/
+lcov.info
+
+# === [Python build helpers (optional)] ===
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
