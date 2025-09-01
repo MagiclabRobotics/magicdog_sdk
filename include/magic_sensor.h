@@ -17,15 +17,15 @@ using SensorControllerPtr = std::unique_ptr<SensorController>;
  * @class SensorController
  * @brief 传感器控制器类，封装机器人各类传感器的初始化、开启/关闭和数据获取接口。
  *
- * 支持获取tof、imu、rgbd、ultra、lidar、 双目相机、 鱼眼相机等信息，提供统一的访问方式，
+ * 支持获取tof、imu、rgbd、ultra、laser_scan、 双目相机、 鱼眼相机等信息，提供统一的访问方式，
  * 用于上层控制器或状态融合模块调用。
  */
 class MAGIC_EXPORT_API SensorController final : public NonCopyable {
   // 消息指针类型定义（智能指针，便于内存管理）
-  using TofPtr = std::shared_ptr<Tof>;                          // TOF 数据指针
-  using UltraPtr = std::shared_ptr<Ultra>;                      // 超声波数据指针
+  using TofPtr = std::shared_ptr<Float32MultiArray>;            // TOF 数据指针
+  using UltraPtr = std::shared_ptr<Float32MultiArray>;          // 超声波数据指针
   using HeadTouchPtr = std::shared_ptr<HeadTouch>;              // 头部触摸数据指针
-  using LidarPtr = std::shared_ptr<LaserScan>;                  // 激光雷达数据指针
+  using LaserScanPtr = std::shared_ptr<LaserScan>;              // 激光雷达数据指针
   using ImagePtr = std::shared_ptr<Image>;                      // 图像数据指针
   using CameraInfoPtr = std::shared_ptr<CameraInfo>;            // 相机内参数据指针
   using CompressedImagePtr = std::shared_ptr<CompressedImage>;  // 压缩图像数据指针
@@ -35,7 +35,7 @@ class MAGIC_EXPORT_API SensorController final : public NonCopyable {
   using TofCallback = std::function<void(const TofPtr)>;
   using UltraCallback = std::function<void(const UltraPtr)>;
   using HeadTouchCallback = std::function<void(const HeadTouchPtr)>;
-  using LidarCallback = std::function<void(const LidarPtr)>;
+  using LaserScanCallback = std::function<void(const LaserScanPtr)>;
   using ImageCallback = std::function<void(const ImagePtr)>;
   using CameraInfoCallback = std::function<void(const CameraInfoPtr)>;
   using CompressedImageCallback = std::function<void(const CompressedImagePtr)>;
@@ -73,19 +73,19 @@ class MAGIC_EXPORT_API SensorController final : public NonCopyable {
    */
   Status CloseChannelSwith();
 
-  // === Lidar控制 ===
+  // === Laser Scan控制 ===
 
   /**
-   * @brief 打开 Lidar。
+   * @brief 打开 Laser Scan。
    * @return 操作状态。
    */
-  Status OpenLidar();
+  Status OpenLaserScan();
 
   /**
-   * @brief 关闭 Lidar。
+   * @brief 关闭 Laser Scan。
    * @return 操作状态。
    */
-  Status CloseLidar();
+  Status CloseLaserScan();
 
   // === RGBD 相机控制 ===
 
@@ -139,7 +139,7 @@ class MAGIC_EXPORT_API SensorController final : public NonCopyable {
    * @brief 订阅激光雷达数据
    * @param callback 接收到激光雷达数据后的处理回调
    */
-  void SubscribeLidar(const LidarCallback callback);
+  void SubscribeLaserScan(const LaserScanCallback callback);
 
   /**
    * @brief 订阅RGBD深度相机内参数据

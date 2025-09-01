@@ -47,7 +47,7 @@ def main():
     sensor_controller = robot.get_sensor_controller()
     # sensor_controller.subscribe_tof(lambda tof: logging.info(f"TOF: {len(tof.data)}"))
     sensor_controller.subscribe_ultra(lambda ultra: logging.info(f"Ultra: {len(ultra.data)}"))
-    sensor_controller.subscribe_lidar(lambda lidar: logging.info(f"Lidar: {len(lidar.ranges)}"))
+    sensor_controller.subscribe_laser_scan(lambda laser_scan: logging.info(f"Laser Scan: {len(laser_scan.ranges)}"))
     # sensor_controller.subscribe_imu(lambda imu: logging.info(f"IMU: {imu.orientation}"))
     sensor_controller.subscribe_rgbd_color_camera_info(lambda camera_info: logging.info(f"RGBD Color Camera Info: {camera_info.K}"))
     sensor_controller.subscribe_rgbd_depth_image(lambda depth_image: logging.info(f"RGBD Depth Image: {len(depth_image.data)}"))
@@ -63,9 +63,9 @@ def main():
         robot.shutdown()
         return
 
-    status = sensor_controller.open_lidar()
+    status = sensor_controller.open_laser_scan()
     if status.code != ErrorCode.OK:
-        logging.error(f"Failed to open lidar: {status.message}")
+        logging.error(f"Failed to open laser scan: {status.message}")
         robot.shutdown()
         return
     
@@ -83,9 +83,9 @@ def main():
 
     time.sleep(10)
 
-    status = sensor_controller.close_lidar()
+    status = sensor_controller.close_laser_scan()
     if status.code != ErrorCode.OK:
-        logging.error(f"Failed to close lidar: {status.message}")
+        logging.error(f"Failed to close laser scan: {status.message}")
         robot.shutdown()
         return
 
@@ -110,7 +110,7 @@ def main():
         return
 
     # Avoid unprocessed buffered data in lcm
-    time.sleep(10)
+    time.sleep(30)
 
     robot.disconnect()
     robot.shutdown()

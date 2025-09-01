@@ -352,9 +352,9 @@ typedef struct tts_cmd {
  */
 struct Imu {
   int64_t timestamp;              ///< 时间戳（单位：纳秒），表示该IMU数据采集的时间点
-  double orientation[4];          ///< 姿态四元数（w, x, y, z），用于表示空间姿态，避免欧拉角万向锁问题
-  double angular_velocity[3];     ///< 角速度（单位：rad/s），绕X、Y、Z轴的角速度，通常来自陀螺仪
-  double linear_acceleration[3];  ///< 线加速度（单位：m/s^2），X、Y、Z轴的线性加速度，通常来自加速度计
+  std::array<double, 4> orientation;  ///< 姿态四元数（w, x, y, z），用于表示空间姿态，避免欧拉角万向锁问题
+  std::array<double, 3> angular_velocity;  ///< 角速度（单位：rad/s），绕X、Y、Z轴的角速度，通常来自陀螺仪
+  std::array<double, 3> linear_acceleration;  ///< 线加速度（单位：m/s^2），X、Y、Z轴的线性加速度，通常来自加速度计
   float temperature;              ///< 温度（单位：摄氏度或其他，应在使用时明确）
 };
 
@@ -425,9 +425,9 @@ struct CameraInfo {
 
   std::vector<double> D;  ///< 畸变参数数组
 
-  double K[9];   ///< 相机内参矩阵
-  double R[9];   ///< 矫正矩阵
-  double P[12];  ///< 投影矩阵
+  std::array<double, 9> K;  ///< 相机内参矩阵
+  std::array<double, 9> R;  ///< 矫正矩阵
+  std::array<double, 12> P;  ///< 投影矩阵
 
   int32_t binning_x;  ///< 水平binning系数
   int32_t binning_y;  ///< 垂直binning系数
@@ -513,16 +513,6 @@ struct ByteMultiArray {
   MultiArrayLayout layout;
   std::vector<uint8_t> data;
 };
-
-/**
- * @brief TOF数据结构
- */
-using Tof = Float32MultiArray;
-
-/**
- * @brief 超声波数据结构
- */
-using Ultra = Float32MultiArray;
 
 /**
  * @brief 8位整数数据结构

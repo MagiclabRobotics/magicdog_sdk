@@ -26,7 +26,6 @@ try:
     logging.info("Successfully imported MagicDog Python module!")
 except ImportError as e:
     logging.error(f"Import failed: {e}")
-    logging.error("Please run build_python.sh to build Python bindings first")
     sys.exit(1)
 
 
@@ -253,4 +252,4 @@ def main():
     logging.info("\nExample program execution completed!")
 
 if __name__ == "__main__":
-    main()  
+    main() 

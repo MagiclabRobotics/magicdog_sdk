@@ -55,65 +55,6 @@ int main() {
     return -1;
   }
 
-  // controller.SubscribeTof([](const std::shared_ptr<Tof>) {
-  //   static unsigned int count = 0;
-  //   if (count++ % 10 == 0) {
-  //     std::cout << "Received TOF." << std::endl;
-  //   }
-  // });
-  // controller.SubscribeUltra([](const std::shared_ptr<Ultra>) {
-  //   static unsigned int count = 0;
-  //   if (count++ % 10 == 0) {
-  //     std::cout << "Received ultra." << std::endl;
-  //   }
-  // });
-  // controller.SubscribeHeadTouch([](const std::shared_ptr<HeadTouch>) {
-  //   std::cout << "Received head touch." << std::endl;
-  // });
-
-  // Open lidar
-  // status = controller.OpenLidar();
-  // if (status.code != ErrorCode::OK) {
-  //   std::cerr << "Open lidar failed"
-  //             << ", code: " << status.code
-  //             << ", message: " << status.message << std::endl;
-  //   robot.Shutdown();
-  //   return -1;
-  // }
-
-  // controller.SubscribeImu([](const std::shared_ptr<Imu> msg) {
-  //   static unsigned int count = 0;
-  //   if (count++ % 10000 == 0) {
-  //     std::cout << "Received IMU." << std::endl;
-  //   }
-  // });
-
-  // controller.SubscribeLidar([] (const std::shared_ptr<LaserScan>) {
-  //   std::cout << "Received lidar point cloud." << std::endl;
-  // });
-
-  // controller.SubscribeRgbdColorCameraInfo([](const std::shared_ptr<CameraInfo> msg) {
-  //   std::cout << "Received RGBD color camera info." << std::endl;
-  // });
-  // controller.SubscribeRgbdDepthImage([](const std::shared_ptr<Image> msg) {
-  //   std::cout << "Received RGBD depth image." << std::endl;
-  // });
-  // controller.SubscribeRgbdColorImage([](const std::shared_ptr<Image> msg) {
-  //   std::cout << "Received RGBD color image." << std::endl;
-  // });
-  // controller.SubscribeRgbDepthCameraInfo([](const std::shared_ptr<CameraInfo> msg) {
-  //   std::cout << "Received RGB depth camera info." << std::endl;
-  // });
-
-  // status = controller.OpenRgbdCamera();
-  // if (status.code != ErrorCode::OK) {
-  //   std::cerr << "Open RGBD camera failed"
-  //             << ", code: " << status.code
-  //             << ", message: " << status.message << std::endl;
-  //   robot.Shutdown();
-  //   return -1;
-  // }
-
   controller.SubscribeLeftBinocularHighImg([](const std::shared_ptr<CompressedImage> msg) {
     std::cout << "Received left binocular high image." << std::endl;
   });
@@ -137,26 +78,6 @@ int main() {
   }
 
   usleep(50000000);
-
-  // Close lidar
-  // status = controller.CloseLidar();
-  // if (status.code != ErrorCode::OK) {
-  //   std::cerr << "Close lidar failed"
-  //             << ", code: " << status.code
-  //             << ", message: " << status.message << std::endl;
-  //   robot.Shutdown();
-  //   return -1;
-  // }
-
-  // Close RGBD camera
-  // status = controller.CloseRgbdCamera();
-  // if (status.code != ErrorCode::OK) {
-  //   std::cerr << "Close RGBD camera failed"
-  //             << ", code: " << status.code
-  //             << ", message: " << status.message << std::endl;
-  //   robot.Shutdown();
-  //   return -1;
-  // }
 
   // Close binocular camera
   status = controller.CloseBinocularCamera();

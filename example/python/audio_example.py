@@ -132,9 +132,9 @@ def main():
         logging.error("Failed to get voice configuration")   
 
     def subscribe_origin_voice_data(data):
-        logging.info(f"Received raw voice data: {data.data}")
+        logging.info(f"Received raw voice data: {len(data.data)}")
     def subscribe_bf_voice_data(data):
-        logging.info(f"Received BF voice data: {data.data}")
+        logging.info(f"Received BF voice data: {len(data.data)}")
 
     audio_controller.subscribe_origin_voice_data(subscribe_origin_voice_data)
     audio_controller.subscribe_bf_voice_data(subscribe_bf_voice_data)

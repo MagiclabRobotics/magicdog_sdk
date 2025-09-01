@@ -38,9 +38,9 @@ void print_help(const char* prog_name) {
   std::cout << "  a        Function 5: Move left\n";
   std::cout << "  s        Function 6: Move backward\n";
   std::cout << "  d        Function 7: Move right\n";
-  std::cout << "  x        Function 7: Stop movement\n";
-  std::cout << "  t        Function 8: Turn left\n";
-  std::cout << "  g        Function 9: Turn right\n";
+  std::cout << "  x        Function 8: Stop movement\n";
+  std::cout << "  t        Function 9: Turn left\n";
+  std::cout << "  g        Function 10: Turn right\n";
 }
 
 int getch() {

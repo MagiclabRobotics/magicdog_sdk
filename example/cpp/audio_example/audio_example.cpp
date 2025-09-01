@@ -59,7 +59,7 @@ int main() {
   std::cout << "Get volume success, volume: " << std::to_string(get_volume) << std::endl;
 
   // Set robot volume
-  status = controller.SetVolume(7);
+  status = controller.SetVolume(70);
   if (status.code != ErrorCode::OK) {
     std::cerr << "Set volume failed"
               << ", code: " << status.code
@@ -134,23 +134,6 @@ int main() {
             << ", custom_bot: " << get_speech_config.bot_config.custom_data.size() << std::endl;
   for (const auto& [key, value] : get_speech_config.bot_config.custom_data) {
     std::cout << "Custom bot data: " << key << ", " << value.name << std::endl;
-  }
-
-  // Set voice configuration
-  SetSpeechConfig set_speech_config = ToSetSpeechConfig(get_speech_config);
-  set_speech_config.wakeup_name = "Xiaomai";
-  set_speech_config.is_doa_enable = false;
-  set_speech_config.is_front_doa = false;
-  set_speech_config.is_fullduplex_enable = false;
-  set_speech_config.is_enable = true;
-
-  status = controller.SetVoiceConfig(set_speech_config);
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Set voice config failed"
-              << ", code: " << status.code
-              << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
   }
 
   // Subscribe to raw voice data
