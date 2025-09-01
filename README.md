@@ -40,7 +40,10 @@ net.core.wmem_default=20971520
 ## Build examples
 To build the examples inside this reposity:
 ```
-  sh build.sh
+  mkdir build
+  cd build
+  cmake .. -DBUILD_EXAMPLES=ON
+  make -j8
 ```
 
 ## Doc

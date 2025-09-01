@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.18)
 project(magicdog_sdk LANGUAGES C CXX)
 
 # Project Options
-option(BUILD_EXAMPLES "Build examples" ON)
+option(BUILD_EXAMPLES "Build examples" OFF)
 
 # Set cmake path
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
