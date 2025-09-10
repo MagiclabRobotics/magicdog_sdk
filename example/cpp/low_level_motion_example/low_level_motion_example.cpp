@@ -108,7 +108,7 @@ int main() {
       receive_state = *msg;
     }
 
-    if (count++%1000 == 0)
+    if (count++ % 1000 == 0)
       std::cout << "Received leg state data." << std::endl;
   });
 
@@ -118,8 +118,8 @@ int main() {
 
   sleep(10);
 
-  float j1[] = { 0.0000, 1.0477, -2.0944};   // base height 0.2 
-  float j2[] = { 0.0000, 0.7231, -1.4455};   // base height 0.3
+  float j1[] = {0.0000, 1.0477, -2.0944};  // base height 0.2
+  float j2[] = {0.0000, 0.7231, -1.4455};  // base height 0.3
   float inital_q[12] = {receive_state.state[0].q, receive_state.state[1].q, receive_state.state[2].q,
                         receive_state.state[3].q, receive_state.state[4].q, receive_state.state[5].q,
                         receive_state.state[6].q, receive_state.state[7].q, receive_state.state[8].q,
@@ -129,25 +129,25 @@ int main() {
   unsigned long int cnt = 0;
   while (true) {
     if (cnt < 1000) {
-      double t = 1.0*cnt/1000.0;
+      double t = 1.0 * cnt / 1000.0;
       t = std::min(std::max(t, 0.0), 1.0);
 
       for (int i = 0; i < 12; ++i) {
-        command.cmd[i].q_des = (1-t)*inital_q[i] + t*j1[i%3];
+        command.cmd[i].q_des = (1 - t) * inital_q[i] + t * j1[i % 3];
       }
     } else if (cnt < 1750) {
-      double t = 1.0*(cnt-1000)/700.0;
+      double t = 1.0 * (cnt - 1000) / 700.0;
       t = std::min(std::max(t, 0.0), 1.0);
 
       for (int i = 0; i < 12; ++i) {
-        command.cmd[i].q_des = (1-t)*j1[i%3] + t*j2[i%3];
+        command.cmd[i].q_des = (1 - t) * j1[i % 3] + t * j2[i % 3];
       }
     } else if (cnt < 2500) {
-      double t = 1.0*(cnt-1750)/700.0;
+      double t = 1.0 * (cnt - 1750) / 700.0;
       t = std::min(std::max(t, 0.0), 1.0);
 
       for (int i = 0; i < 12; ++i) {
-        command.cmd[i].q_des = (1-t)*j2[i%3] + t*j1[i%3];
+        command.cmd[i].q_des = (1 - t) * j2[i % 3] + t * j1[i % 3];
       }
     } else {
       cnt = 1000;

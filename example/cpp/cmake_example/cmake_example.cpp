@@ -111,20 +111,20 @@ void JoyStickCommand(float left_x_axis,
 
 void JoyThread() {
   auto& controller = robot.GetHighLevelMotionController();
-    while (is_running.load()) {
-      JoystickCommand joy_command;
-      joy_command.left_x_axis = left_x_axis;
-      joy_command.left_y_axis = left_y_axis;
-      joy_command.right_x_axis = right_x_axis;
-      joy_command.right_y_axis = right_y_axis;
-      auto status = controller.SendJoyStickCommand(joy_command);
-      if (status.code != ErrorCode::OK) {
-        std::cerr << "Send joystick command failed"
-                  << ", code: " << status.code
-                  << ", message: " << status.message << std::endl;
-      }
-      usleep(10000);
+  while (is_running.load()) {
+    JoystickCommand joy_command;
+    joy_command.left_x_axis = left_x_axis;
+    joy_command.left_y_axis = left_y_axis;
+    joy_command.right_x_axis = right_x_axis;
+    joy_command.right_y_axis = right_y_axis;
+    auto status = controller.SendJoyStickCommand(joy_command);
+    if (status.code != ErrorCode::OK) {
+      std::cerr << "Send joystick command failed"
+                << ", code: " << status.code
+                << ", message: " << status.message << std::endl;
     }
+    usleep(10000);
+  }
 }
 
 int main(int argc, char* argv[]) {
@@ -173,39 +173,39 @@ int main(int argc, char* argv[]) {
     GaitMode current_gait = GaitMode::GAIT_PASSIVE;
     auto status = robot.GetHighLevelMotionController().GetGait(current_gait);
     if (status.code != ErrorCode::OK) {
-        std::cerr << "Get robot gait failed"
+      std::cerr << "Get robot gait failed"
                 << ", code: " << status.code
                 << ", message: " << status.message << std::endl;
-        return false;
+      return false;
     }
     if (current_gait != GaitMode::GAIT_DOWN_CLIMB_STAIRS) {
-        status = robot.GetHighLevelMotionController().SetGait(GaitMode::GAIT_DOWN_CLIMB_STAIRS);
-        if (status.code != ErrorCode::OK) {
-            std::cerr << "Set robot gait failed"
-                        << ", code: " << status.code
-                        << ", message: " << status.message << std::endl;
-            return false;
-        }
+      status = robot.GetHighLevelMotionController().SetGait(GaitMode::GAIT_DOWN_CLIMB_STAIRS);
+      if (status.code != ErrorCode::OK) {
+        std::cerr << "Set robot gait failed"
+                  << ", code: " << status.code
+                  << ", message: " << status.message << std::endl;
+        return false;
+      }
     } else {
-        return true;
+      return true;
     }
 
     status = robot.GetHighLevelMotionController().GetGait(current_gait);
     if (status.code != ErrorCode::OK) {
-        std::cerr << "Get robot gait failed"
-                    << ", code: " << status.code
-                    << ", message: " << status.message << std::endl;
-        return false;
+      std::cerr << "Get robot gait failed"
+                << ", code: " << status.code
+                << ", message: " << status.message << std::endl;
+      return false;
     }
     while (current_gait != GaitMode::GAIT_DOWN_CLIMB_STAIRS) {
-        usleep(10000);
-        status = robot.GetHighLevelMotionController().GetGait(current_gait);
-        if (status.code != ErrorCode::OK) {
-            std::cerr << "Get robot gait failed"
-                        << ", code: " << status.code
-                        << ", message: " << status.message << std::endl;
-            return false;
-        }
+      usleep(10000);
+      status = robot.GetHighLevelMotionController().GetGait(current_gait);
+      if (status.code != ErrorCode::OK) {
+        std::cerr << "Get robot gait failed"
+                  << ", code: " << status.code
+                  << ", message: " << status.message << std::endl;
+        return false;
+      }
     }
     return true;
   };
@@ -231,56 +231,56 @@ int main(int argc, char* argv[]) {
       }
       case 'w': {
         if (!change_gait_to_down_climb_stairs(robot)) {
-            std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-            break;
+          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
+          break;
         }
         JoyStickCommand(0.0, 1.0, 0.0, 0.0);  // Forward
         break;
       }
       case 'a': {
         if (!change_gait_to_down_climb_stairs(robot)) {
-            std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-            break;
+          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
+          break;
         }
         JoyStickCommand(-1.0, 0.0, 0.0, 0.0);  // Left
         break;
       }
       case 'x': {
         if (!change_gait_to_down_climb_stairs(robot)) {
-            std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-            break;
+          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
+          break;
         }
         JoyStickCommand(0.0, -1.0, 0.0, 0.0);  // Backward
         break;
       }
       case 'd': {
         if (!change_gait_to_down_climb_stairs(robot)) {
-            std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-            break;
+          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
+          break;
         }
         JoyStickCommand(1.0, 0.0, 0.0, 0.0);  // Right
         break;
       }
       case 't': {
         if (!change_gait_to_down_climb_stairs(robot)) {
-            std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-            break;
+          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
+          break;
         }
         JoyStickCommand(0.0, 0.0, -1.0, 0.0);  // Turn left
         break;
       }
       case 'g': {
         if (!change_gait_to_down_climb_stairs(robot)) {
-            std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-            break;
+          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
+          break;
         }
         JoyStickCommand(0.0, 0.0, 1.0, 0.0);  // Turn right
         break;
       }
       case 's': {
         if (!change_gait_to_down_climb_stairs(robot)) {
-            std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-            break;
+          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
+          break;
         }
         JoyStickCommand(0.0, 0.0, 0.0, 0.0);  // Stop
         break;

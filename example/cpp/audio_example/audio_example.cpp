@@ -111,6 +111,21 @@ int main() {
   // Wait 5s
   usleep(2000000);
 
+  std::cout << "Play music" << std::endl;
+  std::string music_file_path = "local_music:/opt/eame/dreame_manager/share/dreame_manager/configures/music_files/dance_xsgy.mp3";
+  tts.content = music_file_path;
+  status = controller.Play(tts);
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "Play music failed"
+              << ", code: " << status.code
+              << ", message: " << status.message << std::endl;
+    robot.Shutdown();
+    return -1;
+  }
+
+  // Wait 5s
+  usleep(5000000);
+
   // Get voice configuration
   GetSpeechConfig get_speech_config;
   status = controller.GetVoiceConfig(get_speech_config);

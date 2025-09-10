@@ -102,6 +102,39 @@ class MAGIC_EXPORT_API HighLevelMotionController final : public MotionController
    * @return 执行状态。
    */
   Status SendJoyStickCommand(JoystickCommand& joy_command);
+
+  /**
+   * @brief 获取所有步态以及对应 前进、横移、旋转 速度比例
+   * @param gait_speed_ratios 所有步态以及对应 前进、横移、旋转 速度比例
+   * @return 执行状态。
+   */
+  Status GetAllGaitSpeedRatio(AllGaitSpeedRatio& gait_speed_ratios);
+
+  /**
+   * @brief 设置步态以及对应 前进、横移、旋转 速度比例
+   * @param gait_speed_ratios 步态以及对应 前进、横移、旋转 速度比例
+   * @return 执行状态。
+   */
+  Status SetGaitSpeedRatio(GaitMode gait_mode, const GaitSpeedRatio& gait_speed_ratio);
+
+  /**
+   * @brief 获取头部电机使能状态
+   * @param enabled 返回参数，true表示已使能，false表示未使能
+   * @return 执行状态
+   */
+  Status GetHeadMotorEnabled(bool& enabled);
+
+  /**
+   * @brief 使能头部电机
+   * @return 执行状态
+   */
+  Status EnableHeadMotor();
+
+  /**
+   * @brief 关闭头部电机
+   * @return 执行状态
+   */
+  Status DisableHeadMotor();
 };
 
 /**

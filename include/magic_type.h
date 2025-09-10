@@ -139,6 +139,80 @@ enum class ControllerLevel : int8_t {
 };
 
 /**
+ * @brief 机器人状态枚举，适用于状态机控制
+ */
+enum class GaitMode : int32_t {
+  GAIT_PASSIVE = 0,             // 掉落（关闭电机使能）
+  GAIT_STAND_R = 2,             // 位控站立、RecoveryStand
+  GAIT_STAND_B = 3,             // 力控站立、姿态展示、BalanceStand
+  GAIT_RUN_FAST = 8,            // 快跑
+  GAIT_DOWN_CLIMB_STAIRS = 9,   // 下爬楼梯=>盲走=>慢跑
+  GAIT_TROT = 10,               // 小跑
+  GAIT_PRONK = 11,              // 跳跃
+  GAIT_BOUND = 12,              // 前后跳
+  GAIT_AMBLE = 14,              // 交叉步
+  GAIT_CRAWL = 29,              // 爬行
+  GAIT_LOWLEVL_SDK = 30,        // 低层SDK步态
+  GAIT_WALK = 39,               // 缓走
+  GAIT_UP_CLIMB_STAIRS = 56,    // 上爬楼梯（全地形）
+  GAIT_RL_TERRAIN = 110,        // 全地形
+  GAIT_RL_FALL_RECOVERY = 111,  // 跌倒爬起
+  GAIT_RL_HAND_STAND = 112,     // 倒立
+  GAIT_RL_FOOT_STAND = 113,     // 正立
+  GAIT_ENTER_RL = 1001,         // 进入RL
+  GAIT_DEFAULT = 99,            // 默认
+  GAIT_NONE = 9999,             // 无步态
+};
+
+/**
+ * @brief 人形机器人动作指令枚举（对应动作ID）
+ */
+enum class TrickAction : int32_t {
+  ACTION_NONE = 0,
+  ACTION_WIGGLE_HIP = 26,             // 扭屁股
+  ACTION_SWING_BODY = 27,             // 甩身
+  ACTION_STRETCH = 28,                // 伸懒腰
+  ACTION_STOMP = 29,                  // 跺脚
+  ACTION_JUMP_JACK = 30,              // 开合跳
+  ACTION_SPACE_WALK = 31,             // 太空步
+  ACTION_IMITATE = 32,                // 模仿
+  ACTION_SHAKE_HEAD = 33,             // 摇头
+  ACTION_PUSH_UP = 34,                // 俯卧撑
+  ACTION_CHEER_UP = 35,               // 加油
+  ACTION_HIGH_FIVES = 36,             // 击掌
+  ACTION_SCRATCH = 37,                // 挠痒
+  ACTION_HIGH_JUMP = 38,              // 跳高
+  ACTION_SWING_DANCE = 39,            // 摇摆舞
+  ACTION_LEAP_FROG = 40,              // 蛙跳
+  ACTION_BACK_FLIP = 41,              // 后空翻
+  ACTION_FRONT_FLIP = 42,             // 前空翻
+  ACTION_SPIN_JUMP_LEFT = 43,         // 旋转左跳70度
+  ACTION_SPIN_JUMP_RIGHT = 44,        // 旋转右跳70度
+  ACTION_JUMP_FRONT = 45,             // 前跳0.5米
+  ACTION_ACT_CUTE = 46,               // 撒娇
+  ACTION_BOXING = 47,                 // 打拳
+  ACTION_SIDE_SOMERSAULT = 48,        // 侧空翻
+  ACTION_RANDOM_DANCE = 49,           // 随机跳舞
+  ACTION_LEFT_SIDE_SOMERSAULT = 84,   // 左侧侧空翻
+  ACTION_RIGHT_SIDE_SOMERSAULT = 85,  // 右侧侧空翻
+  ACTION_DANCE2 = 91,                 // 跳舞2
+  ACTION_EMERGENCY_STOP = 101,        // 急停
+  ACTION_LIE_DOWN = 102,              // 趴下
+  ACTION_RECOVERY_STAND = 103,        // 起立
+  ACTION_HAPPY_NEW_YEAR = 105,        // 拜年=作揖
+  ACTION_SLOW_GO_FRONT = 108,         // 过来
+  ACTION_SLOW_GO_BACK = 109,          // 后退
+  ACTION_BACK_HOME = 110,             // 回窝
+  ACTION_LEAVE_HOME = 111,            // 离窝
+  ACTION_TURN_AROUND = 112,           // 转圈
+  ACTION_DANCE = 115,                 // 跳舞
+  ACTION_ROLL_ABOUT = 116,            // 打滚
+  ACTION_SHAKE_RIGHT_HAND = 117,      // 握右手
+  ACTION_SHAKE_LEFT_HAND = 118,       // 握左手
+  ACTION_SIT_DOWN = 119,              // 坐下
+};
+
+/**
  * @brief 高层运动控制摇杆指令的数据结构
  */
 struct JoystickCommand {
@@ -171,78 +245,21 @@ struct JoystickCommand {
    */
   float right_y_axis;
 };
+
 /**
- * @brief 机器人状态枚举，适用于状态机控制
+ * @brief 步态以及对应 前进、横移、旋转 速度比例
  */
-enum class GaitMode : int32_t {
-  GAIT_PASSIVE           = 0,     // 掉落（关闭电机使能）
-  GAIT_STAND_R           = 2,     // 位控站立、RecoveryStand
-  GAIT_STAND_B           = 3,     // 力控站立、姿态展示、BalanceStand
-  GAIT_RUN_FAST          = 8,     // 快跑
-  GAIT_DOWN_CLIMB_STAIRS = 9,     // 下爬楼梯=>盲走=>慢跑
-  GAIT_TROT              = 10,    // 小跑
-  GAIT_PRONK             = 11,    // 跳跃
-  GAIT_BOUND             = 12,    // 前后跳
-  GAIT_AMBLE             = 14,    // 交叉步
-  GAIT_CRAWL             = 29,    // 爬行
-  GAIT_LOWLEVL_SDK       = 30,    // 低层SDK步态
-  GAIT_WALK              = 39,    // 缓走
-  GAIT_UP_CLIMB_STAIRS   = 56,    // 上爬楼梯（全地形）
-  GAIT_RL_TERRAIN        = 110,   // 全地形
-  GAIT_RL_FALL_RECOVERY  = 111,   // 跌倒爬起
-  GAIT_RL_HAND_STAND     = 112,   // 倒立
-  GAIT_RL_FOOT_STAND     = 113,   // 正立
-  GAIT_ENTER_RL          = 1001,  // 进入RL
-  GAIT_DEFAULT           = 99,    // 默认
-  GAIT_NONE              = 9999,  // 无步态
+struct GaitSpeedRatio {
+  double straight_ratio;
+  double turn_ratio;
+  double lateral_ratio;
 };
 
 /**
- * @brief 人形机器人动作指令枚举（对应动作ID）
+ * @brief 所有步态以及对应 前进、横移、旋转 速度比例
  */
-enum class TrickAction : int32_t {
-  ACTION_NONE                  = 0,
-  ACTION_WIGGLE_HIP            = 26,   // 扭屁股
-  ACTION_SWING_BODY            = 27,   // 甩身
-  ACTION_STRETCH               = 28,   // 伸懒腰
-  ACTION_STOMP                 = 29,   // 跺脚
-  ACTION_JUMP_JACK             = 30,   // 开合跳
-  ACTION_SPACE_WALK            = 31,   // 太空步
-  ACTION_IMITATE               = 32,   // 模仿
-  ACTION_SHAKE_HEAD            = 33,   // 摇头
-  ACTION_PUSH_UP               = 34,   // 俯卧撑
-  ACTION_CHEER_UP              = 35,   // 加油
-  ACTION_HIGH_FIVES            = 36,   // 击掌
-  ACTION_SCRATCH               = 37,   // 挠痒
-  ACTION_HIGH_JUMP             = 38,   // 跳高
-  ACTION_SWING_DANCE           = 39,   // 摇摆舞
-  ACTION_LEAP_FROG             = 40,   // 蛙跳
-  ACTION_BACK_FLIP             = 41,   // 后空翻
-  ACTION_FRONT_FLIP            = 42,   // 前空翻
-  ACTION_SPIN_JUMP_LEFT        = 43,   // 旋转左跳70度
-  ACTION_SPIN_JUMP_RIGHT       = 44,   // 旋转右跳70度
-  ACTION_JUMP_FRONT            = 45,   // 前跳0.5米
-  ACTION_ACT_CUTE              = 46,   // 撒娇
-  ACTION_BOXING                = 47,   // 打拳
-  ACTION_SIDE_SOMERSAULT       = 48,   // 侧空翻
-  ACTION_RANDOM_DANCE          = 49,   // 随机跳舞
-  ACTION_LEFT_SIDE_SOMERSAULT  = 84,   // 左侧侧空翻
-  ACTION_RIGHT_SIDE_SOMERSAULT = 85,   // 右侧侧空翻
-  ACTION_DANCE2                = 91,   // 跳舞2
-  ACTION_EMERGENCY_STOP        = 101,  // 急停
-  ACTION_LIE_DOWN              = 102,  // 趴下
-  ACTION_RECOVERY_STAND        = 103,  // 起立
-  ACTION_HAPPY_NEW_YEAR        = 105,  // 拜年=作揖
-  ACTION_SLOW_GO_FRONT         = 108,  // 过来
-  ACTION_SLOW_GO_BACK          = 109,  // 后退
-  ACTION_BACK_HOME             = 110,  // 回窝
-  ACTION_LEAVE_HOME            = 111,  // 离窝
-  ACTION_TURN_AROUND           = 112,  // 转圈
-  ACTION_DANCE                 = 115,  // 跳舞
-  ACTION_ROLL_ABOUT            = 116,  // 打滚
-  ACTION_SHAKE_RIGHT_HAND      = 117,  // 握右手
-  ACTION_SHAKE_LEFT_HAND       = 118,  // 握左手
-  ACTION_SIT_DOWN              = 119,  // 坐下
+struct AllGaitSpeedRatio {
+  std::map<GaitMode, GaitSpeedRatio> gait_speed_ratios;
 };
 
 /**
@@ -351,11 +368,11 @@ typedef struct tts_cmd {
  * @brief IMU 数据结构体，包含时间戳、姿态、角速度、加速度和温度信息
  */
 struct Imu {
-  int64_t timestamp;              ///< 时间戳（单位：纳秒），表示该IMU数据采集的时间点
-  std::array<double, 4> orientation;  ///< 姿态四元数（w, x, y, z），用于表示空间姿态，避免欧拉角万向锁问题
-  std::array<double, 3> angular_velocity;  ///< 角速度（单位：rad/s），绕X、Y、Z轴的角速度，通常来自陀螺仪
+  int64_t timestamp;                          ///< 时间戳（单位：纳秒），表示该IMU数据采集的时间点
+  std::array<double, 4> orientation;          ///< 姿态四元数（w, x, y, z），用于表示空间姿态，避免欧拉角万向锁问题
+  std::array<double, 3> angular_velocity;     ///< 角速度（单位：rad/s），绕X、Y、Z轴的角速度，通常来自陀螺仪
   std::array<double, 3> linear_acceleration;  ///< 线加速度（单位：m/s^2），X、Y、Z轴的线性加速度，通常来自加速度计
-  float temperature;              ///< 温度（单位：摄氏度或其他，应在使用时明确）
+  float temperature;                          ///< 温度（单位：摄氏度或其他，应在使用时明确）
 };
 
 /**
@@ -425,8 +442,8 @@ struct CameraInfo {
 
   std::vector<double> D;  ///< 畸变参数数组
 
-  std::array<double, 9> K;  ///< 相机内参矩阵
-  std::array<double, 9> R;  ///< 矫正矩阵
+  std::array<double, 9> K;   ///< 相机内参矩阵
+  std::array<double, 9> R;   ///< 矫正矩阵
   std::array<double, 12> P;  ///< 投影矩阵
 
   int32_t binning_x;  ///< 水平binning系数
@@ -629,10 +646,10 @@ enum class TtsType {
  * @brief 语音系统完整配置结构体
  */
 struct GetSpeechConfig {
-  SpeakerConfig speaker_config;     // 音色配置
-  BotConfig bot_config;             // 智能体配置
-  WakeupConfig wakeup_config;       // 唤醒配置
-  DialogConfig dialog_config;       // 对话配置
+  SpeakerConfig speaker_config;      // 音色配置
+  BotConfig bot_config;              // 智能体配置
+  WakeupConfig wakeup_config;        // 唤醒配置
+  DialogConfig dialog_config;        // 对话配置
   TtsType tts_type = TtsType::NONE;  // 语音模型
 };
 

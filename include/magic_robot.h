@@ -52,6 +52,11 @@ class MAGIC_EXPORT_API MagicRobot final : public NonCopyable {
   void Shutdown();
 
   /**
+   * @brief 释放机器人系统资源。
+   */
+  void Release();
+
+  /**
    * @brief 与机器人服务建立通信连接。
    * @return gRPC调用状态，成功返回 Status::OK。
    */

@@ -17,6 +17,11 @@ std::atomic<float> left_y_axis(0.0);
 std::atomic<float> right_x_axis(0.0);
 std::atomic<float> right_y_axis(0.0);
 
+std::atomic<float> left_x_axis_gain(0.0);
+std::atomic<float> left_y_axis_gain(0.0);
+std::atomic<float> right_x_axis_gain(0.0);
+std::atomic<float> right_y_axis_gain(0.0);
+
 void signalHandler(int signum) {
   std::cout << "Interrupt signal (" << signum << ") received.\n";
   is_running.store(false);
@@ -41,6 +46,8 @@ void print_help(const char* prog_name) {
   std::cout << "  x        Function 8: Stop movement\n";
   std::cout << "  t        Function 9: Turn left\n";
   std::cout << "  g        Function 10: Turn right\n";
+  std::cout << "  v        Function 11: Close Head Motor\n";
+  std::cout << "  b        Function 12: Open Head Motor\n";
 }
 
 int getch() {
@@ -99,6 +106,34 @@ void ExecuteTrick() {
   std::cout << "Robot trick executed successfully." << std::endl;
 }
 
+void CloseHeadMotor() {
+  // Get high level motion controller
+  auto& controller = robot.GetHighLevelMotionController();
+
+  // Close head motor
+  auto status = controller.DisableHeadMotor();
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "Disable head motor failed"
+              << ", code: " << status.code << std::endl;
+    return;
+  }
+  std::cout << "Head motor disabled successfully." << std::endl;
+}
+
+void OpenHeadMotor() {
+  // Get high level motion controller
+  auto& controller = robot.GetHighLevelMotionController();
+
+  // Open head motor
+  auto status = controller.EnableHeadMotor();
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "Enable head motor failed"
+              << ", code: " << status.code << std::endl;
+    return;
+  }
+  std::cout << "Head motor enabled successfully." << std::endl;
+}
+
 void JoyStickCommand(float left_x_axis,
                      float left_y_axis,
                      float right_x_axis,
@@ -123,12 +158,31 @@ void JoyThread() {
                 << ", code: " << status.code
                 << ", message: " << status.message << std::endl;
     }
+
+    static double last_left_x_axis_v = -1;
+    static double last_left_y_axis_v = -1;
+    static double last_right_x_axis_v = -1;
+    static double last_right_y_axis_v = -1;
+
+    double left_x_axis_v_current = left_x_axis * left_x_axis_gain;
+    double left_y_axis_v_current = left_y_axis * left_y_axis_gain;
+    double right_x_axis_v_current = right_x_axis * right_x_axis_gain;
+    double right_y_axis_v_current = right_y_axis * right_y_axis_gain;
+
+    if (std::abs(left_x_axis_v_current - last_left_x_axis_v) > 0.00001 || std::abs(left_y_axis_v_current - last_left_y_axis_v) > 0.00001 || std::abs(right_x_axis_v_current - last_right_x_axis_v) > 0.00001 || std::abs(right_y_axis_v_current - last_right_y_axis_v) > 0.00001) {
+      std::cout << "left_x_v: " << left_x_axis_v_current << ", left_y_v: " << left_y_axis_v_current << ", right_x_v: " << right_x_axis_v_current << ", right_y_v: " << right_y_axis_v_current << std::endl;
+      last_left_x_axis_v = left_x_axis_v_current;
+      last_left_y_axis_v = left_y_axis_v_current;
+      last_right_x_axis_v = right_x_axis_v_current;
+      last_right_y_axis_v = right_y_axis_v_current;
+    }
+
     usleep(10000);
   }
 }
 
 int main(int argc, char* argv[]) {
-  // 绑定 SIGINT（Ctrl+C）
+  // Bind SIGINT（Ctrl+C）
   signal(SIGINT, signalHandler);
 
   std::string local_ip = "192.168.54.111";
@@ -161,6 +215,34 @@ int main(int argc, char* argv[]) {
     robot.Shutdown();
     return -1;
   }
+
+  // Set gait speed ratio
+  status = robot.GetHighLevelMotionController().SetGaitSpeedRatio(GaitMode::GAIT_DOWN_CLIMB_STAIRS, GaitSpeedRatio{0.25, 0.2, 0.4});
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "Set gait speed ratio failed"
+              << ", code: " << status.code
+              << ", message: " << status.message << std::endl;
+    robot.Shutdown();
+    return -1;
+  }
+
+  // Get all gait speed ratio
+  AllGaitSpeedRatio gait_speed_ratios;
+  status = robot.GetHighLevelMotionController().GetAllGaitSpeedRatio(gait_speed_ratios);
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "Get all gait speed ratio failed"
+              << ", code: " << status.code
+              << ", message: " << status.message << std::endl;
+    robot.Shutdown();
+    return -1;
+  }
+
+  left_x_axis_gain.store(gait_speed_ratios.gait_speed_ratios[GaitMode::GAIT_DOWN_CLIMB_STAIRS].lateral_ratio);
+  left_y_axis_gain.store(gait_speed_ratios.gait_speed_ratios[GaitMode::GAIT_DOWN_CLIMB_STAIRS].straight_ratio);
+  right_x_axis_gain.store(gait_speed_ratios.gait_speed_ratios[GaitMode::GAIT_DOWN_CLIMB_STAIRS].turn_ratio);
+  right_y_axis_gain.store(0.0);
+
+  std::cout << "left_x_axis_gain: " << left_x_axis_gain.load() << ", left_y_axis_gain: " << left_y_axis_gain.load() << ", right_x_axis_gain: " << right_x_axis_gain.load() << ", right_y_axis_gain: " << right_y_axis_gain.load() << std::endl;
 
   std::thread joy_thread(JoyThread);
 
@@ -283,6 +365,14 @@ int main(int argc, char* argv[]) {
           break;
         }
         JoyStickCommand(0.0, 0.0, 0.0, 0.0);  // Stop
+        break;
+      }
+      case 'v': {
+        CloseHeadMotor();
+        break;
+      }
+      case 'b': {
+        OpenHeadMotor();
         break;
       }
       default:
