@@ -34,8 +34,6 @@ def main():
         logging.error("Initialization failed")
         return
     
-    robot.set_timeout(5000)
-    
     if not robot.connect():
         logging.error("Connection failed")
         robot.shutdown()
@@ -82,9 +80,6 @@ def main():
 
     logging.info("Getting low level motion controller")
     low_controller = robot.get_low_level_motion_controller()
-
-    logging.info("Setting period to 2ms")
-    low_controller.set_period_ms(2)
 
     is_had_receive_leg_state = False
     mut = threading.Lock()

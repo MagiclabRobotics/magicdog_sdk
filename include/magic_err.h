@@ -5,7 +5,6 @@
 #include <unordered_map>
 namespace magic::dog {
 
-// 确认一下狗的故障码位置
 static std::unordered_map<uint16_t, std::string> error_code_map = {
     {0x0000, "No error"},
 

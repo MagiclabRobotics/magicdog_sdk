@@ -207,8 +207,6 @@ def main():
         logging.error("Initialization failed")
         return
     
-    robot.set_timeout(5000)
-    
     if not robot.connect():
         logging.error("Connection failed")
         robot.shutdown()

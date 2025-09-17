@@ -35,8 +35,7 @@ def main():
     if not robot.initialize(local_ip):
         logging.error("Robot initialization failed")
         return
-
-    robot.set_timeout(5000)
+        
     if not robot.connect():
         logging.error("Robot connection failed")
         robot.shutdown()

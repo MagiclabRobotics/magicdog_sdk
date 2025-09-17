@@ -88,9 +88,6 @@ int main() {
   // Get low level controller
   auto& controller = robot.GetLowLevelMotionController();
 
-  // Set control command sending period to 2ms, 500Hz
-  controller.SetPeriodMs(2);
-
   current_mode = GaitMode::GAIT_NONE;
   while (current_mode != GaitMode::GAIT_LOWLEVL_SDK) {
     high_controller.GetGait(current_mode);

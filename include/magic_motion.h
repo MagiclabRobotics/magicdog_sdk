@@ -17,183 +17,184 @@ class HighLevelMotionController;
 using HighLevelMotionControllerPtr = std::unique_ptr<HighLevelMotionController>;
 
 /**
- * @brief 抽象基类，定义机器人运动控制器的通用接口。
+ * @brief Abstract base class defining the common interface for robot motion controllers.
  *
- * MotionControllerBase 是所有运动控制器的基类，提供初始化和关闭控制器的纯虚函数接口。
- * 派生类需实现这些接口，以满足具体的控制需求。
+ * MotionControllerBase is the base class for all motion controllers, providing pure virtual functions for initialization and shutdown.
+ * Derived classes must implement these interfaces to meet specific control requirements.
  */
 class MAGIC_EXPORT_API MotionControllerBase : public NonCopyable {
  public:
   /**
-   * @brief 构造函数。
+   * @brief Constructor.
    */
   MotionControllerBase() = default;
 
   /**
-   * @brief 虚析构函数，确保派生类资源正确释放。
+   * @brief Virtual destructor to ensure derived class resources are released properly.
    */
   virtual ~MotionControllerBase() = default;
 
   /**
-   * @brief 初始化控制器。
-   * @return 初始化成功返回 true，否则返回 false。
+   * @brief Initialize the controller.
+   * @return Returns true if initialization is successful, otherwise false.
    */
   virtual bool Initialize() = 0;
 
   /**
-   * @brief 关闭控制器，释放相关资源。
+   * @brief Shutdown the controller and release related resources.
    */
   virtual void Shutdown() = 0;
 
  protected:
-  std::atomic_bool is_shutdown_{true};  // 标记是否已初始化
+  std::atomic_bool is_shutdown_{true};  // Indicates whether the controller is initialized
 };
 
 /**
  * @class HighLevelMotionController
- * @brief 高层运动控制器，用于对机器人进行语义层面的动作控制（如：行走、特技、头部运动等）。
+ * @brief High-level motion controller for semantic-level robot actions (e.g., walking, tricks, head movement, etc.).
  *
- * 该类继承自 MotionControllerBase，主要面向高层用户接口，隐藏底层细节。
+ * This class inherits from MotionControllerBase and is mainly for high-level user interfaces, hiding low-level details.
  */
 class MAGIC_EXPORT_API HighLevelMotionController final : public MotionControllerBase {
  public:
-  /// 构造函数，初始化高层控制器内部状态。
+  /// Constructor, initializes the internal state of the high-level controller.
   HighLevelMotionController();
 
-  /// 析构函数，释放资源。
+  /// Destructor, releases resources.
   virtual ~HighLevelMotionController();
 
   /**
-   * @brief 初始化控制器，准备高层控制功能。
-   * @return 初始化是否成功。
+   * @brief Initialize the controller and prepare high-level control functions.
+   * @return Whether initialization is successful.
    */
   virtual bool Initialize() override;
 
   /**
-   * @brief 关闭控制器，释放相关资源。
+   * @brief Shutdown the controller and release related resources.
    */
   virtual void Shutdown() override;
 
   /**
-   * @brief 设置机器人的步态模式（如站立锁定、平衡站立、拟人行走等，参考GaitMode定义）。
-   * @param gait_mode 枚举类型的步态模式。
-   * @return 执行状态。
+   * @brief Set the robot's gait mode (e.g., stand lock, balance stand, humanoid walk, etc., see GaitMode definition).
+   * @param gait_mode Gait mode as an enum.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
    */
-  Status SetGait(const GaitMode gait_mode);
+  Status SetGait(const GaitMode gait_mode, int timeout_ms = 5000);
 
   /**
-   * @brief 获取机器人的步态模式（如站立锁定、平衡站立、拟人行走等，参考GaitMode定义）。
-   * @param gait_mode 枚举类型的步态模式。
-   * @return 执行状态。
+   * @brief Get the robot's gait mode (e.g., stand lock, balance stand, humanoid walk, etc., see GaitMode definition).
+   * @param gait_mode Gait mode as an enum.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
    */
-  Status GetGait(GaitMode& gait_mode);
+  Status GetGait(GaitMode& gait_mode, int timeout_ms = 5000);
 
   /**
-   * @brief 执行指定的特技动作（如鞠躬、挥手等）。
-   * @param trick_action 特技动作标识。
-   * @return 执行状态。
-   * @note 特技动作通常是预定义的复杂动作序列, 必须要在GaitMode::GAIT_BALANCE_STAND(46)步态下才能进行特技展示。
+   * @brief Execute a specified trick action (e.g., bow, wave, etc.).
+   * @param trick_action Trick action identifier.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
+   * @note Trick actions are usually predefined complex action sequences and must be performed under GaitMode::GAIT_BALANCE_STAND(46).
    */
-  Status ExecuteTrick(const TrickAction trick_action);
+  Status ExecuteTrick(const TrickAction trick_action, int timeout_ms = 5000);
 
   /**
-   * @brief 发送实时摇杆控制指令。发送频率建议20HZ。
-   * @param joy_command 包含左右摇杆坐标的控制指令。
-   * @return 执行状态。
+   * @brief Send real-time joystick control commands. Recommended frequency: 20Hz.
+   * @param joy_command Control command containing left and right joystick coordinates.
+   * @return Operation status.
    */
   Status SendJoyStickCommand(JoystickCommand& joy_command);
 
   /**
-   * @brief 获取所有步态以及对应 前进、横移、旋转 速度比例
-   * @param gait_speed_ratios 所有步态以及对应 前进、横移、旋转 速度比例
-   * @return 执行状态。
+   * @brief Get all gait speed ratios for forward, lateral, and rotational movement.
+   * @param gait_speed_ratios All gait speed ratios for forward, lateral, and rotational movement.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
    */
-  Status GetAllGaitSpeedRatio(AllGaitSpeedRatio& gait_speed_ratios);
+  Status GetAllGaitSpeedRatio(AllGaitSpeedRatio& gait_speed_ratios, int timeout_ms = 5000);
 
   /**
-   * @brief 设置步态以及对应 前进、横移、旋转 速度比例
-   * @param gait_speed_ratios 步态以及对应 前进、横移、旋转 速度比例
-   * @return 执行状态。
+   * @brief Set gait speed ratios for forward, lateral, and rotational movement.
+   * @param gait_speed_ratios Gait speed ratios for forward, lateral, and rotational movement.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
    */
-  Status SetGaitSpeedRatio(GaitMode gait_mode, const GaitSpeedRatio& gait_speed_ratio);
+  Status SetGaitSpeedRatio(GaitMode gait_mode, const GaitSpeedRatio& gait_speed_ratio, int timeout_ms = 5000);
 
   /**
-   * @brief 获取头部电机使能状态
-   * @param enabled 返回参数，true表示已使能，false表示未使能
-   * @return 执行状态
+   * @brief Get the enable status of the head motor.
+   * @param enabled Output parameter, true if enabled, false if not.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
    */
-  Status GetHeadMotorEnabled(bool& enabled);
+  Status GetHeadMotorEnabled(bool& enabled, int timeout_ms = 5000);
 
   /**
-   * @brief 使能头部电机
-   * @return 执行状态
+   * @brief Enable the head motor.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
    */
-  Status EnableHeadMotor();
+  Status EnableHeadMotor(int timeout_ms = 5000);
 
   /**
-   * @brief 关闭头部电机
-   * @return 执行状态
+   * @brief Disable the head motor.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
    */
-  Status DisableHeadMotor();
+  Status DisableHeadMotor(int timeout_ms = 5000);
 };
 
 /**
  * @class LowLevelMotionController
- * @brief 低层运动控制器，直接控制各个运动部件（如手臂、腿、头、腰等）的关节动作。
+ * @brief Low-level motion controller for direct control of joint actions of various motion components (e.g., arms, legs, head, waist, etc.).
  *
- * 面向底层开发者或控制系统，提供各个身体部件的指令下发与状态读取接口。
+ * Intended for low-level developers or control systems, providing interfaces for sending commands and reading states of each body part.
  */
 class MAGIC_EXPORT_API LowLevelMotionController final : public MotionControllerBase {
-  // 消息指针类型定义（智能指针，便于内存管理）
-  using LegJointStatePtr = std::shared_ptr<LegState>;  // 下肢关节状态消息指针
+  // Message pointer type definition (smart pointer for memory management)
+  using LegJointStatePtr = std::shared_ptr<LegState>;  // Leg joint state message pointer
 
-  // 各类关节数据的回调函数类型定义
-  using LegJointStateCallback = std::function<void(const LegJointStatePtr)>;  // 下肢关节状态回调函数类型
+  // Callback function type definition for various joint data
+  using LegJointStateCallback = std::function<void(const LegJointStatePtr)>;  // Leg joint state callback function type
 
  public:
-  /// 构造函数，初始化低层控制器。
+  /// Constructor, initializes the low-level controller.
   LowLevelMotionController();
 
-  /// 析构函数，释放资源。
+  /// Destructor, releases resources.
   virtual ~LowLevelMotionController();
 
   /**
-   * @brief 初始化控制器，建立底层运动控制连接。
-   * @return 初始化是否成功。
+   * @brief Initialize the controller and establish low-level motion control connection.
+   * @return Whether initialization is successful.
    */
   virtual bool Initialize() override;
 
   /**
-   * @brief 关闭控制器，释放底层资源。
+   * @brief Shutdown the controller and release low-level resources.
    */
   virtual void Shutdown() override;
 
-  /**
-   * @brief 设置控制器的周期时间（单位：毫秒）。
-   * @param period_ms 控制器周期时间，单位为毫秒。
-   * @note 如果设置的周期小于1ms，将自动调整为默认值2ms，建议不低于2ms。
-   */
-  void SetPeriodMs(uint64_t period_ms);
-
-  // === 下肢控制 ===
+  // === Leg control ===
 
   /**
-   * @brief 订阅下肢关节状态数据
-   * @param callback 回调函数，用于处理下肢关节状态的接收数据
+   * @brief Subscribe to leg joint state data.
+   * @param callback Callback function for processing received leg joint state data.
    */
   void SubscribeLegState(LegJointStateCallback callback);
 
   /**
-   * @brief 发布下肢关节控制指令
-   * @param command 包含目标角度/速度等控制信息的下肢关节控制指令
-   * @return 执行状态。
+   * @brief Publish leg joint control command.
+   * @param command Leg joint control command containing target angle/velocity and other control information.
+   * @return Operation status.
    */
   Status PublishLegCommand(const LegJointCommand& command);
 
   /**
-   * @brief lcm 通道开关
-   * @param enalbe lcm通道开关信息
-   * @note 使用高层运动控制时，关闭 lcm 通道，使用底层运动控制时，打开 lcm 通道
+   * @brief lcm channel switch
+   * @param enable lcm channel switch information
+   * @note When using high-level motion control, turn off the lcm channel; when using low-level motion control, turn on the lcm channel.
    */
   void EnableSendMsg(bool enable);
 };

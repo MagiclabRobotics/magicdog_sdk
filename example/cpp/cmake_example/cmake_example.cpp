@@ -139,9 +139,6 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  // Set RPC timeout to 5s
-  robot.SetTimeout(5000);
-
   // Connect to robot
   auto status = robot.Connect();
   if (status.code != ErrorCode::OK) {
