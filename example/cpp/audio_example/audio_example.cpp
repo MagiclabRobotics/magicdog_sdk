@@ -1,197 +1,293 @@
 #include "magic_robot.h"
+#include "magic_sdk_version.h"
 
+#include <termios.h>
 #include <unistd.h>
+#include <chrono>
 #include <csignal>
-
+#include <cstdlib>
 #include <iostream>
+#include <memory>
+#include <thread>
 
 using namespace magic::dog;
 
-magic::dog::MagicRobot robot;
+// Global robot instance
+std::unique_ptr<MagicRobot> robot = nullptr;
 
 void signalHandler(int signum) {
-  std::cout << "Interrupt signal (" << signum << ") received.\n";
-
-  robot.Shutdown();
-  // Exit process
+  std::cout << "\nInterrupt signal (" << signum << ") received." << std::endl;
+  if (robot) {
+    robot->Shutdown();
+  }
   exit(signum);
 }
 
-int main() {
-  // Bind SIGINT (Ctrl+C)
-  signal(SIGINT, signalHandler);
+void print_help() {
+  std::cout << "Key Function Demo Program\n"
+            << std::endl;
+  std::cout << "Key Function Description:" << std::endl;
+  std::cout << "Audio Functions:" << std::endl;
+  std::cout << "  1        Function 1: Get volume" << std::endl;
+  std::cout << "  2        Function 2: Set volume" << std::endl;
+  std::cout << "  3        Function 3: Play TTS" << std::endl;
+  std::cout << "  4        Function 4: Stop playback" << std::endl;
+  std::cout << "  5        Function 5: Get voice config" << std::endl;
+  std::cout << "" << std::endl;
+  std::cout << "Audio stream Functions:" << std::endl;
+  std::cout << "  6        Function 6: Open audio stream" << std::endl;
+  std::cout << "  7        Function 7: Close audio stream" << std::endl;
+  std::cout << "  8        Function 8: Subscribe to audio stream" << std::endl;
+  std::cout << "  9        Function 9: Unsubscribe from audio stream" << std::endl;
+  std::cout << "" << std::endl;
+  std::cout << "  ?        Function ?: Print help" << std::endl;
+  std::cout << "  ESC      Exit program" << std::endl;
+}
 
-  std::string local_ip = "192.168.55.10";
-  // Configure local IP address for direct network connection to machine and initialize SDK
-  if (!robot.Initialize(local_ip)) {
-    std::cerr << "Robot SDK initialization failed." << std::endl;
-    robot.Shutdown();
-    return -1;
-  }
+int getch() {
+  struct termios oldt, newt;
+  int ch;
+  tcgetattr(STDIN_FILENO, &oldt);  // Get current terminal settings
+  newt = oldt;
+  newt.c_lflag &= ~(ICANON | ECHO);  // Disable buffering and echo
+  tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+  ch = getchar();                           // Read key press
+  tcsetattr(STDIN_FILENO, TCSANOW, &oldt);  // Restore settings
+  return ch;
+}
 
-  // Connect to robot
-  auto status = robot.Connect();
+void get_volume() {
+  auto& audio_controller = robot->GetAudioController();
+
+  int volume = 0;
+  auto status = audio_controller.GetVolume(volume);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Connect robot failed"
-              << ", code: " << status.code
+    std::cerr << "get volume failed, code: " << status.code
               << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
+    return;
   }
+  std::cout << "get volume success, volume: " << volume << std::endl;
+}
 
-  // Get audio controller
-  auto& controller = robot.GetAudioController();
+void set_volume(int volume) {
+  auto& audio_controller = robot->GetAudioController();
 
-  // Get robot's current volume
-  int get_volume = 0;
-  status = controller.GetVolume(get_volume);
+  auto status = audio_controller.SetVolume(volume);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Get volume failed"
-              << ", code: " << status.code
+    std::cerr << "set volume failed, code: " << status.code
               << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
+    return;
   }
+  std::cout << "set volume success" << std::endl;
+}
 
-  std::cout << "Get volume success, volume: " << std::to_string(get_volume) << std::endl;
+void play_tts() {
+  auto& audio_controller = robot->GetAudioController();
 
-  // Set robot volume
-  status = controller.SetVolume(70);
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Set volume failed"
-              << ", code: " << status.code
-              << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
-  }
-
-  // Verify if the set volume is correct
-  status = controller.GetVolume(get_volume);
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Get volume failed"
-              << ", code: " << status.code
-              << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
-  }
-
-  std::cout << "Get volume success, volume: " << std::to_string(get_volume) << std::endl;
-
-  // Play voice
   TtsCommand tts;
   tts.id = "100000000001";
   tts.content = "How's the weather today!";
   tts.priority = TtsPriority::HIGH;
   tts.mode = TtsMode::CLEARTOP;
-  status = controller.Play(tts);
+
+  auto status = audio_controller.Play(tts);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Play TTS failed"
-              << ", code: " << status.code
+    std::cerr << "play tts failed, code: " << status.code
               << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
+    return;
   }
+  std::cout << "play tts success" << std::endl;
+}
 
-  // Wait 2s
-  usleep(5000000);
+void stop_tts() {
+  auto& audio_controller = robot->GetAudioController();
 
-  // Stop voice playback
-  status = controller.Stop();
+  auto status = audio_controller.Stop();
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Stop TTS failed"
-              << ", code: " << status.code
+    std::cerr << "stop tts failed, code: " << status.code
               << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
+    return;
   }
+  std::cout << "stop tts success" << std::endl;
+}
 
-  // Wait 5s
-  usleep(2000000);
+void open_audio_stream() {
+  auto& audio_controller = robot->GetAudioController();
 
-  std::cout << "Play music" << std::endl;
-  std::string music_file_path = "local_music:/opt/eame/dreame_manager/share/dreame_manager/configures/music_files/dance_xsgy.mp3";
-  tts.content = music_file_path;
-  status = controller.Play(tts);
+  auto status = audio_controller.ControlVoiceStream(true, true);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Play music failed"
-              << ", code: " << status.code
+    std::cerr << "open audio stream failed, code: " << status.code
               << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
+    return;
   }
+  std::cout << "open audio stream success" << std::endl;
+}
 
-  // Wait 5s
-  usleep(5000000);
+void close_audio_stream() {
+  auto& audio_controller = robot->GetAudioController();
 
-  // Get voice configuration
-  GetSpeechConfig get_speech_config;
-  status = controller.GetVoiceConfig(get_speech_config);
+  auto status = audio_controller.ControlVoiceStream(false, false);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Get voice config failed"
-              << ", code: " << status.code
+    std::cerr << "close audio stream failed, code: " << status.code
               << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
+    return;
   }
+  std::cout << "close audio stream success" << std::endl;
+}
 
-  std::cout << "Get voice config success, speaker_id: " << get_speech_config.speaker_config.selected.speaker_id
-            << ", region: " << get_speech_config.speaker_config.selected.region
-            << ", bot_id: " << get_speech_config.bot_config.selected.bot_id
-            << ", is_front_doa: " << get_speech_config.dialog_config.is_front_doa
-            << ", is_fullduplex_enable: " << get_speech_config.dialog_config.is_fullduplex_enable
-            << ", is_enable: " << get_speech_config.dialog_config.is_enable
-            << ", is_doa_enable: " << get_speech_config.dialog_config.is_doa_enable
-            << ", speaker_speed: " << get_speech_config.speaker_config.speaker_speed
-            << ", wakeup_name: " << get_speech_config.wakeup_config.name
-            << ", custom_bot: " << get_speech_config.bot_config.custom_data.size() << std::endl;
-  for (const auto& [key, value] : get_speech_config.bot_config.custom_data) {
-    std::cout << "Custom bot data: " << key << ", " << value.name << std::endl;
-  }
+// Global counters for audio stream callbacks
+static int origin_counter = 0;
+static int bf_counter = 0;
 
-  // Subscribe to raw voice data
-  controller.SubscribeOriginVoiceData([](const std::shared_ptr<ByteMultiArray> data) {
-    std::cout << "Received raw voice data, size: " << data->data.size() << std::endl;
-  });
-  // Subscribe to BF voice data
-  controller.SubscribeBfVoiceData([](const std::shared_ptr<ByteMultiArray> data) {
-    std::cout << "Received BF voice data, size: " << data->data.size() << std::endl;
+void subscribe_audio_stream() {
+  auto& audio_controller = robot->GetAudioController();
+
+  // Subscribe to origin voice data
+  audio_controller.SubscribeOriginVoiceData([](const std::shared_ptr<ByteMultiArray> data) {
+    if (origin_counter % 30 == 0) {
+      std::cout << "Received origin voice data, size: " << data->data.size() << std::endl;
+      std::cout << "\r";
+      std::cout.flush();
+    }
+    origin_counter++;
   });
 
-  // Control voice data stream
-  status = controller.ControlVoiceStream(true, true);
+  // Subscribe to bf voice data
+  audio_controller.SubscribeBfVoiceData([](const std::shared_ptr<ByteMultiArray> data) {
+    if (bf_counter % 30 == 0) {
+      std::cout << "Received bf voice data, size: " << data->data.size() << std::endl;
+      std::cout << "\r";
+      std::cout.flush();
+    }
+    bf_counter++;
+  });
+
+  std::cout << "Subscribed to audio streams" << std::endl;
+}
+
+void unsubscribe_audio_stream() {
+  auto& audio_controller = robot->GetAudioController();
+
+  audio_controller.UnsubscribeOriginVoiceData();
+  audio_controller.UnsubscribeBfVoiceData();
+  std::cout << "Unsubscribed from audio streams" << std::endl;
+}
+
+void get_voice_config() {
+  auto& audio_controller = robot->GetAudioController();
+
+  GetSpeechConfig voice_config;
+  auto status = audio_controller.GetVoiceConfig(voice_config);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Control voice stream failed"
-              << ", code: " << status.code
+    std::cerr << "get voice config failed, code: " << status.code
               << ", message: " << status.message << std::endl;
+    return;
   }
 
-  // Wait 10s
-  usleep(10000000);
+  std::cout << "Get voice config success" << std::endl;
+  std::cout << "TTS type: " << static_cast<int>(voice_config.tts_type) << std::endl;
+  std::cout << "Speaker: " << voice_config.speaker_config.selected.speaker_id << std::endl;
+  std::cout << "Bot config: " << voice_config.bot_config.selected.bot_id << std::endl;
+  std::cout << "Wake word: " << voice_config.wakeup_config.name << std::endl;
+  std::cout << "Dialog config - Front DOA: " << voice_config.dialog_config.is_front_doa << std::endl;
+  std::cout << "Dialog config - Full duplex: " << voice_config.dialog_config.is_fullduplex_enable << std::endl;
+  std::cout << "Dialog config - Voice enable: " << voice_config.dialog_config.is_enable << std::endl;
+  std::cout << "Dialog config - DOA enable: " << voice_config.dialog_config.is_doa_enable << std::endl;
+}
 
-  std::cout << "Close voice stream" << std::endl;
+int main(int argc, char* argv[]) {
+  // Bind SIGINT (Ctrl+C)
+  signal(SIGINT, signalHandler);
 
-  // status = sensor.ControlVoiceStream(false, false);
-  // if (status.code != ErrorCode::OK) {
-  //   std::cerr << "control voice stream failed"
-  //             << ", code: " << status.code
-  //             << ", message: " << status.message << std::endl;
-  // }
+  print_help();
 
-  // usleep(10000000);
+  std::string local_ip = "192.168.54.111";
+  robot = std::make_unique<MagicRobot>();
 
-  std::cout << "Disconnect robot" << std::endl;
+  // Configure local IP address for direct network connection and initialize SDK
+  if (!robot->Initialize(local_ip)) {
+    std::cerr << "robot sdk initialize failed." << std::endl;
+    robot->Shutdown();
+    return -1;
+  }
+
+  // Connect to robot
+  auto status = robot->Connect();
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "connect robot failed, code: " << status.code
+              << ", message: " << status.message << std::endl;
+    robot->Shutdown();
+    return -1;
+  }
+
+  std::cout << "Press any key to continue (ESC to exit)..." << std::endl;
+
+  // Wait for user input
+  while (true) {
+    int key = getch();
+    if (key == 27) {  // ESC key
+      break;
+    }
+
+    std::cout << "Key ASCII: " << key << ", Character: " << static_cast<char>(key) << std::endl;
+
+    switch (key) {
+      case '1':
+        get_volume();
+        break;
+      case '2': {
+        int volume = 50;
+        std::cout << "Please input volume: ";
+        std::cin >> volume;
+        set_volume(volume);
+        std::cin.ignore();
+      } break;
+      case '3':
+        play_tts();
+        break;
+      case '4':
+        stop_tts();
+        break;
+      case '5':
+        get_voice_config();
+        break;
+      case '6':
+        open_audio_stream();
+        break;
+      case '7':
+        close_audio_stream();
+        break;
+      case '8':
+        subscribe_audio_stream();
+        break;
+      case '9':
+        unsubscribe_audio_stream();
+        break;
+      case '?':
+        print_help();
+        break;
+      default:
+        std::cout << "Unknown key: " << key << std::endl;
+        break;
+    }
+
+    // Sleep 10ms, equivalent to usleep(10000)
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
 
   // Disconnect from robot
-  status = robot.Disconnect();
+  status = robot->Disconnect();
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Disconnect robot failed"
-              << ", code: " << status.code
+    std::cerr << "disconnect robot failed, code: " << status.code
               << ", message: " << status.message << std::endl;
-    robot.Shutdown();
+    robot->Shutdown();
     return -1;
   }
 
-  robot.Shutdown();
+  std::cout << "disconnect robot success" << std::endl;
+
+  robot->Shutdown();
+  std::cout << "robot shutdown" << std::endl;
 
   return 0;
 }

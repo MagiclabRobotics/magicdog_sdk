@@ -12,6 +12,7 @@
 #include "magic_audio.h"
 #include "magic_motion.h"
 #include "magic_sensor.h"
+#include "magic_slam_navigation.h"
 #include "magic_state_monitor.h"
 
 namespace magic::dog {
@@ -19,6 +20,7 @@ using namespace motion;
 using namespace sensor;
 using namespace audio;
 using namespace monitor;
+using namespace slam;
 
 /**
  * @class MagicRobot
@@ -118,6 +120,27 @@ class MAGIC_EXPORT_API MagicRobot final : public NonCopyable {
    * @return Reference type, used to obtain the current status information of the robot.
    */
   StateMonitor& GetStateMonitor();
+
+  /**
+   * @brief Get the slam controller object.
+   * @return Reference type, used to access slam data such as map, position, etc.
+   */
+  SlamNavController& GetSlamNavController();
+
+  // === Channel switch ===
+  /**
+   * @brief Open channel switch
+   * @param timeout_ms Timeout in milliseconds
+   * @return Operation status
+   */
+  Status OpenChannelSwitch(int timeout_ms = 5000);
+
+  /**
+   * @brief Close channel switch
+   * @param timeout_ms Timeout in milliseconds
+   * @return Operation status
+   */
+  Status CloseChannelSwitch(int timeout_ms = 5000);
 
  private:
   std::atomic_bool is_shutdown_{true};  // Indicates whether it has been initialized

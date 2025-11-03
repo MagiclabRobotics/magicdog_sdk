@@ -107,6 +107,18 @@ class MAGIC_EXPORT_API HighLevelMotionController final : public MotionController
   Status SendJoyStickCommand(JoystickCommand& joy_command);
 
   /**
+   * @brief Enable joystick control command.
+   * @return Operation status.
+   */
+  Status EnableJoyStick();
+
+  /**
+   * @brief Disable joystick control command.
+   * @return Operation status.
+   */
+  Status DisableJoyStick();
+
+  /**
    * @brief Get all gait speed ratios for forward, lateral, and rotational movement.
    * @param gait_speed_ratios All gait speed ratios for forward, lateral, and rotational movement.
    * @param timeout_ms Timeout in milliseconds.
@@ -185,18 +197,16 @@ class MAGIC_EXPORT_API LowLevelMotionController final : public MotionControllerB
   void SubscribeLegState(LegJointStateCallback callback);
 
   /**
+   * @brief Unsubscribe from leg joint state data.
+   */
+  void UnsubscribeLegState();
+
+  /**
    * @brief Publish leg joint control command.
    * @param command Leg joint control command containing target angle/velocity and other control information.
    * @return Operation status.
    */
   Status PublishLegCommand(const LegJointCommand& command);
-
-  /**
-   * @brief lcm channel switch
-   * @param enable lcm channel switch information
-   * @note When using high-level motion control, turn off the lcm channel; when using low-level motion control, turn on the lcm channel.
-   */
-  void EnableSendMsg(bool enable);
 };
 
 }  // namespace magic::dog::motion

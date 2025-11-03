@@ -94,14 +94,14 @@ typedef struct bms_data {
    *
    * The current battery percentage, ranging from 0 to 100, indicating the remaining battery.
    */
-  float battery_percentage;
+  double battery_percentage;
 
   /**
    * @brief Battery health
    *
-   * The health status of the battery, usually a floating value representing battery performance. The higher the value, the better the battery.
+   * The health status of the battery, usually a doubleing value representing battery performance. The higher the value, the better the battery.
    */
-  float battery_health;
+  double battery_health;
 
   /**
    * @brief Battery state
@@ -220,7 +220,7 @@ struct JoystickCommand {
    * This value represents the input of the left joystick along the X-axis, ranging from -1.0 to 1.0.
    * -1.0 means left, 1.0 means right, 0 means neutral.
    */
-  float left_x_axis;
+  double left_x_axis;
 
   /**
    * @brief Y-axis value of the left joystick
@@ -228,7 +228,7 @@ struct JoystickCommand {
    * This value represents the input of the left joystick along the Y-axis, ranging from -1.0 to 1.0.
    * -1.0 means down, 1.0 means up, 0 means neutral.
    */
-  float left_y_axis;
+  double left_y_axis;
 
   /**
    * @brief X-axis value of the right joystick
@@ -236,12 +236,12 @@ struct JoystickCommand {
    * This value represents the rotation of the right joystick along the Z-axis, ranging from -1.0 to 1.0.
    * -1.0 means rotate left, 1.0 means rotate right, 0 means neutral.
    */
-  float right_x_axis;
+  double right_x_axis;
 
   /**
    * @brief Y-axis value of the right joystick, TBD
    */
-  float right_y_axis;
+  double right_y_axis;
 };
 
 /**
@@ -264,12 +264,12 @@ struct AllGaitSpeedRatio {
  * @brief Single leg joint control command
  */
 struct SingleLegJointCommand {
-  float q_des = 0.0;    // desired joint position
-  float dq_des = 0.0;   // desired joint velocity
-  float tau_des = 0.0;  // desired feed-forward torque
+  double q_des = 0.0;    // desired joint position
+  double dq_des = 0.0;   // desired joint velocity
+  double tau_des = 0.0;  // desired feed-forward torque
 
-  float kp = 0.0;  // P gain, must be positive
-  float kd = 0.0;  // D gain, must be positive
+  double kp = 0.0;  // P gain, must be positive
+  double kd = 0.0;  // D gain, must be positive
 };
 
 /**
@@ -284,9 +284,9 @@ struct LegJointCommand {
  * @brief Single leg joint state
  */
 struct SingleLegJointState {
-  float q = 0.0;
-  float dq = 0.0;
-  float tau_est = 0.0;
+  double q = 0.0;
+  double dq = 0.0;
+  double tau_est = 0.0;
 };
 
 /**
@@ -370,7 +370,7 @@ struct Imu {
   std::array<double, 4> orientation;          ///< Orientation quaternion (w, x, y, z), used to represent spatial orientation, avoiding gimbal lock of Euler angles
   std::array<double, 3> angular_velocity;     ///< Angular velocity (rad/s), angular velocity around X, Y, Z axes, usually from gyroscope
   std::array<double, 3> linear_acceleration;  ///< Linear acceleration (m/s^2), X, Y, Z axis linear acceleration, usually from accelerometer
-  float temperature;                          ///< Temperature (Celsius or other, should be specified when used)
+  double temperature;                         ///< Temperature (Celsius or other, should be specified when used)
 };
 
 /**
@@ -518,7 +518,7 @@ struct MultiArrayLayout {
  */
 struct Float32MultiArray {
   MultiArrayLayout layout;
-  std::vector<float> data;
+  std::vector<double> data;
 };
 
 /**
@@ -576,7 +576,7 @@ struct SetSpeechConfig {
   bool is_fullduplex_enable;  // Natural conversation
   bool is_enable;             // Speech switch
   bool is_doa_enable;         // Whether to enable wakeup direction head turning
-  float speaker_speed;        // TTS playback speed range [1,2]
+  double speaker_speed;       // TTS playback speed range [1,2]
   std::string wakeup_name;    // Wakeup name
   CustomBotMap custom_bot;    // Custom bot
 };
@@ -590,9 +590,9 @@ struct SpeakerConfigSelected {
  * @brief Speaker configuration structure
  */
 struct SpeakerConfig {
-  std::map<std::string, std::vector<std::array<std::string, 2>>> data;  // Speaker data: region->speaker ID->speaker name
+  std::map<std::string, std::vector<std::vector<std::string>>> data;  // Speaker data: region->speaker ID->speaker name
   SpeakerConfigSelected selected;
-  float speaker_speed;  // Speed
+  double speaker_speed;  // Speed
 };
 
 /**
@@ -651,18 +651,104 @@ struct GetSpeechConfig {
   TtsType tts_type = TtsType::NONE;  // Speech model
 };
 
-inline SetSpeechConfig ToSetSpeechConfig(const GetSpeechConfig& get_speech_config) {
-  SetSpeechConfig set_speech_config;
-  set_speech_config.speaker_id = get_speech_config.speaker_config.selected.speaker_id;
-  set_speech_config.region = get_speech_config.speaker_config.selected.region;
-  set_speech_config.bot_id = get_speech_config.bot_config.selected.bot_id;
-  set_speech_config.is_front_doa = get_speech_config.dialog_config.is_front_doa;
-  set_speech_config.is_fullduplex_enable = get_speech_config.dialog_config.is_fullduplex_enable;
-  set_speech_config.is_enable = get_speech_config.dialog_config.is_enable;
-  set_speech_config.is_doa_enable = get_speech_config.dialog_config.is_doa_enable;
-  set_speech_config.speaker_speed = get_speech_config.speaker_config.speaker_speed;
-  set_speech_config.wakeup_name = get_speech_config.wakeup_config.name;
-  set_speech_config.custom_bot = get_speech_config.bot_config.custom_data;
-  return set_speech_config;
-}
+/************************************************************
+ *                     Slam and Navigation                  *
+ ************************************************************/
+
+/**
+ * @brief Navigation mode enumeration type
+ */
+enum class NavMode {
+  IDLE = 0,      // Idle mode
+  GRID_MAP = 1,  // Grid map navigation mode
+};
+
+/**
+ * @brief 3D pose structure
+ */
+struct Pose3DEuler {
+  std::array<double, 3> position;     ///< Position (x, y, z), used to represent spatial position
+  std::array<double, 3> orientation;  ///< Euler angles (roll, pitch, yaw), used to represent spatial attitude, avoiding Euler angle gimbal lock issues
+};
+
+/**
+ * @brief Mapping image data structure, .pgm format
+ */
+struct MapImageData {
+  std::string type;             // magic number, "P5": binary format
+  uint32_t width = 0;           // image width
+  uint32_t height = 0;          // image height
+  uint32_t max_gray_value = 0;  // max gray value, 255
+  std::vector<uint8_t> image;   // image data
+};
+
+/**
+ * @brief Mapping map metadata structure
+ */
+struct MapMetaData {
+  double resolution = 0.0;      // Map resolution, unit: m/pixel
+  Pose3DEuler origin;           // Map origin, origin of the world coordinate system relative to the map’s lower-left corner
+  MapImageData map_image_data;  // image data, .pgm format image data
+};
+
+/**
+ * @brief Single map information structure
+ */
+struct MapInfo {
+  std::string map_name;       // Map name
+  MapMetaData map_meta_data;  // Map metadata
+};
+
+/**
+ * @brief All map information structure
+ */
+struct AllMapInfo {
+  std::string current_map_name;    // Current map name
+  std::vector<MapInfo> map_infos;  // All map information
+};
+
+/**
+ * @brief Current localization information structure
+ */
+struct LocalizationInfo {
+  bool is_localization = false;  // Whether localized
+  Pose3DEuler pose;              // Localization pose in euler angle(rad)
+};
+
+/**
+ * @brief Global navigation target point structure
+ */
+struct NavTarget {
+  int32_t id = -1;       // Target point ID
+  std::string frame_id;  // Target point frame ID
+  Pose3DEuler goal;      // Target point pose in quaternion
+};
+
+enum class NavStatusType {
+  NONE = 0,         // None status
+  RUNNING = 1,      // Running
+  END_SUCCESS = 2,  // End success
+  END_FAILED = 3,   // End failed
+  PAUSE = 4,        // Pause
+  CONTINUE = 5,     // Continue
+  CANCEL = 6,       // Cancel
+};
+
+struct NavStatus {
+  int32_t id = -1;       // Target point ID, -1 means no target point
+  NavStatusType status;  // Navigation status
+  std::string message;   // Navigation status message
+};
+
+/**
+ * @brief Odometry data structure
+ */
+struct Odometry {
+  Header header;                           ///< Generic message header (timestamp + frame_id)
+  std::string child_frame_id;              ///< Child frame ID
+  std::array<double, 3> position;          ///< Position (x, y, z)
+  std::array<double, 4> orientation;       ///< Orientation (w, x, y, z)
+  std::array<double, 3> linear_velocity;   ///< Linear velocity (x, y, z)
+  std::array<double, 3> angular_velocity;  ///< Angular velocity (x, y, z)
+};
 }  // namespace magic::dog

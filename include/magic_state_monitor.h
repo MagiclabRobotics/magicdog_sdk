@@ -47,7 +47,7 @@ class MAGIC_EXPORT_API StateMonitor final : public NonCopyable {
    * @brief Get the current robot running state (aggregated state information).
    * @return robot_state to receive the current robot state.
    */
-  RobotState GetCurrentState() const;
+  Status GetCurrentState(RobotState& robot_state);
 
  private:
   std::atomic_bool is_shutdown_{true};  // Indicates whether it has been initialized

@@ -1,155 +1,287 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-MagicDog SDK Python Usage Example
-
-This file demonstrates how to use MagicDog SDK Python bindings to control the robot.
-"""
 
 import sys
 import time
+import signal
+import termios
+import tty
 import logging
 from typing import Optional
+import magicdog_python as magicdog
+from magicdog_python import TtsCommand, TtsPriority, TtsMode, GetSpeechConfig
 
+# Configure logging
 logging.basicConfig(
-    level=logging.INFO,  # Minimum log level
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-try:
-    import magicdog_python as magicdog
-    from magicdog_python import TtsCommand, TtsPriority, TtsMode, GetSpeechConfig
-    logging.info("Successfully imported MagicDog Python module!")
-    # Print the path of imported magicdog_python
-    logging.info(f"Imported magicdog_python path: {sys.path}")
-except ImportError as e:
-    logging.error(f"Import failed: {e}")
-    sys.exit(1)
+# Global robot instance
+robot = None
+
+
+def signal_handler(signum, frame):
+    """Handle Ctrl+C signal"""
+    logging.info(f"\nInterrupt signal ({signum}) received.")
+    if robot:
+        robot.shutdown()
+    sys.exit(signum)
+
+
+def print_help():
+    """Print help information"""
+    logging.info("Key Function Description:")
+    logging.info("")
+    logging.info("Audio Functions:")
+    logging.info("  1        Function 1: Get volume")
+    logging.info("  2        Function 2: Set volume")
+    logging.info("  3        Function 3: Play TTS")
+    logging.info("  4        Function 4: Stop playback")
+    logging.info("  5        Function 5: Get voice config")
+    logging.info("")
+    logging.info("Audio stream Functions:")
+    logging.info("  6        Function 6: Open audio stream")
+    logging.info("  7        Function 7: Close audio stream")
+    logging.info("  8        Function 8: Subscribe to audio stream")
+    logging.info("  9        Function 9: Unsubscribe from audio stream")
+    logging.info("")
+    logging.info("  ?        Function ?: Print help")
+    logging.info("  ESC      Exit program")
+
+
+def getch():
+    """Get a single character from standard input"""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch
+
+
+def get_volume(audio_controller):
+    """Get current volume"""
+    status, volume = audio_controller.get_volume()
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error("get volume failed")
+        return
+    logging.info(f"get volume success, volume: {volume}")
+
+
+def set_volume(audio_controller):
+    """Set volume"""
+    status = audio_controller.set_volume(50)
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error(
+            f"set volume failed, code: {status.code}, message: {status.message}"
+        )
+        return
+    logging.info("set volume success")
+
+
+def play_tts(audio_controller):
+    """Play TTS"""
+    tts = TtsCommand()
+    tts.id = "100000000001"
+    tts.content = "How's the weather today!"
+    tts.priority = TtsPriority.HIGH
+    tts.mode = TtsMode.CLEARTOP
+    status = audio_controller.play(tts)
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error(
+            f"play tts failed, code: {status.code}, message: {status.message}"
+        )
+        return
+    logging.info("play tts success")
+
+
+def stop_tts(audio_controller):
+    """Stop TTS playback"""
+    status = audio_controller.stop()
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error(
+            f"stop tts failed, code: {status.code}, message: {status.message}"
+        )
+        return
+    logging.info("stop tts success")
+
+
+def open_audio_stream(audio_controller):
+    """Open audio stream"""
+    status = audio_controller.control_voice_stream(True, True)
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error(
+            f"open audio stream failed, code: {status.code}, message: {status.message}"
+        )
+        return
+    logging.info("open audio stream success")
+
+
+def close_audio_stream(audio_controller):
+    """Close audio stream"""
+    status = audio_controller.control_voice_stream(False, False)
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error(
+            f"close audio stream failed, code: {status.code}, message: {status.message}"
+        )
+        return
+    logging.info("close audio stream success")
+
+
+# Global counter for audio stream callbacks
+origin_counter = [0]
+bf_counter = [0]
+
+
+def subscribe_audio_stream(audio_controller):
+    """Subscribe to audio streams"""
+
+    def origin_callback(data):
+        if origin_counter[0] % 30 == 0:
+            logging.info(f"Received origin voice data, size: {len(data.data)}")
+            sys.stdout.write("\r")
+            sys.stdout.flush()
+        origin_counter[0] += 1
+
+    def bf_callback(data):
+        if bf_counter[0] % 30 == 0:
+            logging.info(f"Received bf voice data, size: {len(data.data)}")
+            sys.stdout.write("\r")
+            sys.stdout.flush()
+        bf_counter[0] += 1
+
+    audio_controller.subscribe_origin_voice_data(origin_callback)
+    audio_controller.subscribe_bf_voice_data(bf_callback)
+    logging.info("Subscribed to audio streams")
+
+
+def unsubscribe_audio_stream(audio_controller):
+    """Unsubscribe from audio streams"""
+    audio_controller.unsubscribe_origin_voice_data()
+    audio_controller.unsubscribe_bf_voice_data()
+    logging.info("Unsubscribed from audio streams")
+
+
+def get_voice_config(audio_controller):
+    """Get voice configuration"""
+    status, voice_config = audio_controller.get_voice_config()
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error("get voice config failed")
+        return
+
+    logging.info("Get voice config success")
+    logging.info(f"voice config tts type: {int(voice_config.tts_type)}")
+    logging.info(
+        f"voice config speaker config: {voice_config.speaker_config.selected.speaker_id}"
+    )
+    logging.info(f"voice config bot config: {voice_config.bot_config.selected.bot_id}")
+    logging.info(f"voice config wakeup config: {voice_config.wakeup_config.name}")
+    logging.info(
+        f"voice config dialog config: {voice_config.dialog_config.is_front_doa}"
+    )
+    logging.info(
+        f"voice config dialog config: {voice_config.dialog_config.is_fullduplex_enable}"
+    )
+    logging.info(f"voice config dialog config: {voice_config.dialog_config.is_enable}")
+    logging.info(
+        f"voice config dialog config: {voice_config.dialog_config.is_doa_enable}"
+    )
+
 
 def main():
     """Main function"""
-    logging.info("MagicDog SDK Audio Python Example Program")
-    
+    global robot
+
+    # Bind SIGINT (Ctrl+C)
+    signal.signal(signal.SIGINT, signal_handler)
+
+    print_help()
+
     local_ip = "192.168.55.10"
     robot = magicdog.MagicRobot()
-    if not robot.initialize(local_ip):
-        logging.error("Robot initialization failed")
-        return
 
-    if not robot.connect():
-        logging.error("Robot connection failed")
+    # Configure local IP address for direct network connection and initialize SDK
+    if not robot.initialize(local_ip):
+        logging.error("robot sdk initialize failed.")
         robot.shutdown()
-        return
-    
-    logging.info("Robot connected successfully")
-    
+        return -1
+
+    # Connect to robot
+    status = robot.connect()
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error(
+            f"connect robot failed, code: {status.code}, message: {status.message}"
+        )
+        robot.shutdown()
+        return -1
+
+    logging.info("Press any key to continue (ESC to exit)...")
+
     audio_controller = robot.get_audio_controller()
 
-    # Get current volume
-    volume = audio_controller.get_volume()
-    if volume != -1:
-        logging.info(f"Current volume: {volume}")
-    else:
-        logging.error("Failed to get volume")
+    # Wait for user input
+    while True:
+        key = getch()
+        if key == "\x1b":  # ESC key
+            break
 
-    # Set volume
-    status = audio_controller.set_volume(50)
-    if status.code != magicdog.ErrorCode.OK:
-        logging.error(f"Failed to set volume: {status.message}")
-        robot.shutdown()
-        return
-    
-    # Get volume again to confirm successful setting
-    volume = audio_controller.get_volume()
-    if volume != -1:
-        logging.info(f"Volume set successfully, current volume: {volume}")
-    else:
-        logging.error("Failed to get volume after setting")
-    
-    tts_command = TtsCommand()
-    tts_command.id = "100000000002"
-    tts_command.content = "How's the weather today!"
-    tts_command.priority = TtsPriority.HIGH
-    tts_command.mode = TtsMode.CLEARTOP
-    status = audio_controller.play(tts_command)
-    if status.code != magicdog.ErrorCode.OK:
-        logging.error(f"Failed to play voice: {status.message}")
-        robot.shutdown()
-        return
-    
-    time.sleep(5)
-    
-    status = audio_controller.stop()
-    if status.code != magicdog.ErrorCode.OK:
-        logging.error(f"Failed to stop voice playback: {status.message}")
-        robot.shutdown()
-        return
+        key_ascii = ord(key)
+        logging.info(f"Key ASCII: {key_ascii}, Character: {key}")
 
-    # Get voice configuration
-    speech_config = audio_controller.get_voice_config()
-    if speech_config:
-        logging.info("Successfully got voice configuration:")
-        logging.info(f"  TTS Type: {speech_config.tts_type}")
-        # Print configuration details
-        logging.info(f"  Configuration details:")
-        
-        if speech_config.speaker_config:
-            speaker = speech_config.speaker_config
-            logging.info(f"    Speaker configuration:")
-            logging.info(f"      Data: {speaker.data}")
-            logging.info(f"      Selected: {speaker.selected.speaker_id} {speaker.selected.region}")
-            logging.info(f"      Speed: {speaker.speaker_speed}")
-        
-        if speech_config.bot_config:
-            bot = speech_config.bot_config
-            logging.info(f"    Bot configuration:")
-            logging.info(f"      Data: ")
-            # bot.data is a dictionary with string keys and values containing [id, name] lists
-            for bot_id, bot_info in bot.data.items():
-                logging.info(f"        Bot ID: {bot_id}")
-                logging.info(f"          Name: {bot_info.name}")
-                logging.info(f"          Workflow ID: {bot_info.workflow}")
-                
-            logging.info(f"      Custom data: {bot.custom_data}")
-            logging.info(f"      Selected: {bot.selected.bot_id}")
-        
-        if speech_config.wakeup_config:
-            wakeup = speech_config.wakeup_config
-            logging.info(f"    Wakeup configuration:")
-            logging.info(f"      Name: {wakeup.name}")
-            logging.info(f"      Data: {wakeup.data}")
-        
-        if speech_config.dialog_config:
-            dialog = speech_config.dialog_config
-            logging.info(f"    Dialog configuration:")
-            logging.info(f"      Front DOA: {dialog.is_front_doa}")
-            logging.info(f"      Full duplex enabled: {dialog.is_fullduplex_enable}")
-            logging.info(f"      Enabled: {dialog.is_enable}")
-            logging.info(f"      DOA enabled: {dialog.is_doa_enable}")
-    else:
-        logging.error("Failed to get voice configuration")   
+        # 1. Audio Functions
+        # 1.1 Get volume
+        if key == "1":
+            get_volume(audio_controller)
+        # 1.2 Set volume
+        elif key == "2":
+            set_volume(audio_controller)
+        # 1.3 Play TTS
+        elif key == "3":
+            play_tts(audio_controller)
+        # 1.4 Stop TTS
+        elif key == "4":
+            stop_tts(audio_controller)
+        # 1.5 Get voice config
+        elif key == "5":
+            get_voice_config(audio_controller)
+        # 2. Audio stream Functions
+        # 2.1 Open audio stream
+        elif key == "6":
+            open_audio_stream(audio_controller)
+        # 2.2 Close audio stream
+        elif key == "7":
+            close_audio_stream(audio_controller)
+        # 2.3 Subscribe to audio stream
+        elif key == "8":
+            subscribe_audio_stream(audio_controller)
+        # 2.4 Unsubscribe from audio stream
+        elif key == "9":
+            unsubscribe_audio_stream(audio_controller)
+        # Help
+        elif key == "?":
+            print_help()
+        else:
+            logging.info(f"Unknown key: {key_ascii}")
 
-    def subscribe_origin_voice_data(data):
-        logging.info(f"Received raw voice data: {len(data.data)}")
-    def subscribe_bf_voice_data(data):
-        logging.info(f"Received BF voice data: {len(data.data)}")
+        # Sleep 10ms, equivalent to usleep(10000)
+        time.sleep(0.01)
 
-    audio_controller.subscribe_origin_voice_data(subscribe_origin_voice_data)
-    audio_controller.subscribe_bf_voice_data(subscribe_bf_voice_data)
+    audio_controller.shutdown()
+    logging.info("audio controller shutdown")
 
-    audio_controller.control_voice_stream(True, True)
-
-    time.sleep(10)
-
-    audio_controller.control_voice_stream(False, False)
-
-    # Avoid unprocessed buffered data in lcm
-    time.sleep(10)
-
+    # Disconnect from robot
     robot.disconnect()
+    logging.info("disconnect robot success")
+
     robot.shutdown()
-    logging.info("\nExample program execution completed!")
+    logging.info("robot shutdown")
+
+    return 0
+
 
 if __name__ == "__main__":
-    main() 
+    sys.exit(main())

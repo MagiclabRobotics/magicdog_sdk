@@ -1,399 +1,277 @@
 #include "magic_robot.h"
+#include "magic_sdk_version.h"
 
 #include <termios.h>
 #include <unistd.h>
+#include <atomic>
+#include <chrono>
 #include <csignal>
-
+#include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <thread>
 
 using namespace magic::dog;
 
-magic::dog::MagicRobot robot;
-std::atomic<bool> is_running(true);
-
-std::atomic<float> left_x_axis(0.0);
-std::atomic<float> left_y_axis(0.0);
-std::atomic<float> right_x_axis(0.0);
-std::atomic<float> right_y_axis(0.0);
-
-std::atomic<float> left_x_axis_gain(0.0);
-std::atomic<float> left_y_axis_gain(0.0);
-std::atomic<float> right_x_axis_gain(0.0);
-std::atomic<float> right_y_axis_gain(0.0);
+// Global variables
+std::unique_ptr<MagicRobot> robot = nullptr;
+std::atomic<bool> running(true);
 
 void signalHandler(int signum) {
-  std::cout << "Interrupt signal (" << signum << ") received.\n";
-  is_running.store(false);
-
-  robot.Shutdown();
-  // Exit process
+  std::cout << "\nInterrupt signal (" << signum << ") received." << std::endl;
+  running = false;
+  if (robot) {
+    robot->Shutdown();
+  }
   exit(signum);
 }
 
-void print_help(const char* prog_name) {
-  std::cout << "Key Function Demo Program\n\n";
-  std::cout << "Usage: " << prog_name << "\n";
-  std::cout << "Key Function Description:\n";
-  std::cout << "  ESC      Exit program\n";
-  std::cout << "  1        Function 1: Position control standing\n";
-  std::cout << "  2        Function 2: Force control standing\n";
-  std::cout << "  3        Function 3: Execute trick - lie down\n";
-  std::cout << "  w        Function 4: Move forward\n";
-  std::cout << "  a        Function 5: Move left\n";
-  std::cout << "  s        Function 6: Move backward\n";
-  std::cout << "  d        Function 7: Move right\n";
-  std::cout << "  x        Function 8: Stop movement\n";
-  std::cout << "  t        Function 9: Turn left\n";
-  std::cout << "  g        Function 10: Turn right\n";
-  std::cout << "  v        Function 11: Close Head Motor\n";
-  std::cout << "  b        Function 12: Open Head Motor\n";
+void print_help() {
+  std::cout << "Key function description:" << std::endl;
+  std::cout << "" << std::endl;
+  std::cout << "Gait and Trick Functions:" << std::endl;
+  std::cout << "  1        Function 1: Recovery Stand" << std::endl;
+  std::cout << "  2        Function 2: Force control standing" << std::endl;
+  std::cout << "  3        Function 3: Execute trick - lie down" << std::endl;
+  std::cout << "" << std::endl;
+  std::cout << "Joystick Functions:" << std::endl;
+  std::cout << "  w        Move forward" << std::endl;
+  std::cout << "  a        Move left" << std::endl;
+  std::cout << "  s        Move backward" << std::endl;
+  std::cout << "  d        Move right" << std::endl;
+  std::cout << "  t        Turn left" << std::endl;
+  std::cout << "  g        Turn right" << std::endl;
+  std::cout << "  x        Stop movement" << std::endl;
+  std::cout << "" << std::endl;
+  std::cout << "  ?        Function ?: Print help" << std::endl;
+  std::cout << "  ESC      Exit program" << std::endl;
 }
 
 int getch() {
   struct termios oldt, newt;
   int ch;
-  tcgetattr(STDIN_FILENO, &oldt);  // Get current terminal settings
+  tcgetattr(STDIN_FILENO, &oldt);
   newt = oldt;
-  newt.c_lflag &= ~(ICANON | ECHO);  // Disable buffering and echo
+  newt.c_lflag &= ~(ICANON | ECHO);
   tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-  ch = getchar();                           // Read key press
-  tcsetattr(STDIN_FILENO, TCSANOW, &oldt);  // Restore settings
+  ch = getchar();
+  tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
   return ch;
 }
 
-void RecoveryStand() {
-  // Get high level motion controller
-  auto& controller = robot.GetHighLevelMotionController();
-
-  // Set gait
-  auto status = controller.SetGait(GaitMode::GAIT_STAND_R);
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Set robot gait failed"
-              << ", code: " << status.code
-              << ", message: " << status.message << std::endl;
-    return;
-  }
-}
-
-void BalanceStand() {
-  // Get high level motion controller
-  auto& controller = robot.GetHighLevelMotionController();
-
-  // Set posture display gait
-  auto status = controller.SetGait(GaitMode::GAIT_STAND_B);
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Set robot gait failed"
-              << ", code: " << status.code
-              << ", message: " << status.message << std::endl;
-    return;
-  }
-  std::cout << "Robot gait set to GAIT_BALANCE_STAND successfully." << std::endl;
-}
-
-void ExecuteTrick() {
-  // Get high level motion controller
-  auto& controller = robot.GetHighLevelMotionController();
-
-  // Execute trick
-  auto status = controller.ExecuteTrick(TrickAction::ACTION_LIE_DOWN);
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Execute robot trick failed"
-              << ", code: " << status.code
-              << ", message: " << status.message << std::endl;
-    return;
-  }
-  std::cout << "Robot trick executed successfully." << std::endl;
-}
-
-void CloseHeadMotor() {
-  // Get high level motion controller
-  auto& controller = robot.GetHighLevelMotionController();
-
-  // Close head motor
-  auto status = controller.DisableHeadMotor();
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Disable head motor failed"
-              << ", code: " << status.code << std::endl;
-    return;
-  }
-  std::cout << "Head motor disabled successfully." << std::endl;
-}
-
-void OpenHeadMotor() {
-  // Get high level motion controller
-  auto& controller = robot.GetHighLevelMotionController();
-
-  // Open head motor
-  auto status = controller.EnableHeadMotor();
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Enable head motor failed"
-              << ", code: " << status.code << std::endl;
-    return;
-  }
-  std::cout << "Head motor enabled successfully." << std::endl;
-}
-
-void JoyStickCommand(float left_x_axis,
-                     float left_y_axis,
-                     float right_x_axis,
-                     float right_y_axis) {
-  ::left_x_axis.store(left_x_axis);
-  ::left_y_axis.store(left_y_axis);
-  ::right_x_axis.store(right_x_axis);
-  ::right_y_axis.store(right_y_axis);
-}
-
-void JoyThread() {
-  auto& controller = robot.GetHighLevelMotionController();
-  while (is_running.load()) {
-    JoystickCommand joy_command;
-    joy_command.left_x_axis = left_x_axis;
-    joy_command.left_y_axis = left_y_axis;
-    joy_command.right_x_axis = right_x_axis;
-    joy_command.right_y_axis = right_y_axis;
-    auto status = controller.SendJoyStickCommand(joy_command);
+// Recovery Stand
+void recovery_stand() {
+  try {
+    auto& high_controller = robot->GetHighLevelMotionController();
+    auto status = high_controller.SetGait(GaitMode::GAIT_STAND_R);
     if (status.code != ErrorCode::OK) {
-      std::cerr << "Send joystick command failed"
-                << ", code: " << status.code
-                << ", message: " << status.message << std::endl;
+      std::cerr << "Failed to set position control standing: " << status.message << std::endl;
+    } else {
+      std::cout << "Robot set to position control standing" << std::endl;
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "Error executing position control standing: " << e.what() << std::endl;
+  }
+}
+
+// Force control standing
+void balance_stand() {
+  try {
+    auto& high_controller = robot->GetHighLevelMotionController();
+    auto status = high_controller.SetGait(GaitMode::GAIT_STAND_B);
+    if (status.code != ErrorCode::OK) {
+      std::cerr << "Failed to set force control standing: " << status.message << std::endl;
+    } else {
+      std::cout << "Robot set to force control standing" << std::endl;
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "Error executing force control standing: " << e.what() << std::endl;
+  }
+}
+
+// Execute trick
+void execute_trick(const std::string& cmd) {
+  try {
+    TrickAction action;
+    if (cmd == "102") {
+      action = TrickAction::ACTION_LIE_DOWN;
+    } else if (cmd == "103") {
+      action = TrickAction::ACTION_RECOVERY_STAND;
+    } else if (cmd == "33") {
+      action = TrickAction::ACTION_SHAKE_HEAD;
+    } else {
+      action = TrickAction::ACTION_NONE;
     }
 
-    static double last_left_x_axis_v = -1;
-    static double last_left_y_axis_v = -1;
-    static double last_right_x_axis_v = -1;
-    static double last_right_y_axis_v = -1;
+    auto& high_controller = robot->GetHighLevelMotionController();
+    auto status = high_controller.ExecuteTrick(action);
+    if (status.code != ErrorCode::OK) {
+      std::cerr << "Failed to execute trick: " << status.message << std::endl;
+    } else {
+      std::cout << "Trick executed successfully" << std::endl;
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "Error executing trick: " << e.what() << std::endl;
+  }
+}
 
-    double left_x_axis_v_current = left_x_axis * left_x_axis_gain;
-    double left_y_axis_v_current = left_y_axis * left_y_axis_gain;
-    double right_x_axis_v_current = right_x_axis * right_x_axis_gain;
-    double right_y_axis_v_current = right_y_axis * right_y_axis_gain;
-
-    if (std::abs(left_x_axis_v_current - last_left_x_axis_v) > 0.00001 || std::abs(left_y_axis_v_current - last_left_y_axis_v) > 0.00001 || std::abs(right_x_axis_v_current - last_right_x_axis_v) > 0.00001 || std::abs(right_y_axis_v_current - last_right_y_axis_v) > 0.00001) {
-      std::cout << "left_x_v: " << left_x_axis_v_current << ", left_y_v: " << left_y_axis_v_current << ", right_x_v: " << right_x_axis_v_current << ", right_y_v: " << right_y_axis_v_current << std::endl;
-      last_left_x_axis_v = left_x_axis_v_current;
-      last_left_y_axis_v = left_y_axis_v_current;
-      last_right_x_axis_v = right_x_axis_v_current;
-      last_right_y_axis_v = right_y_axis_v_current;
+// Switch gait to down climb stairs mode
+bool change_gait_to_down_climb_stairs() {
+  try {
+    GaitMode current_gait;
+    auto& high_controller = robot->GetHighLevelMotionController();
+    auto status = high_controller.GetGait(current_gait);
+    if (status.code != ErrorCode::OK) {
+      std::cerr << "Failed to get current gait: " << status.message << std::endl;
+      return false;
     }
 
-    usleep(10000);
+    if (current_gait != GaitMode::GAIT_DOWN_CLIMB_STAIRS) {
+      status = high_controller.SetGait(GaitMode::GAIT_DOWN_CLIMB_STAIRS);
+      if (status.code != ErrorCode::OK) {
+        std::cerr << "Failed to set down climb stairs gait: " << status.message << std::endl;
+        return false;
+      }
+
+      // Wait for gait switch to complete
+      while (current_gait != GaitMode::GAIT_DOWN_CLIMB_STAIRS) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        status = high_controller.GetGait(current_gait);
+        if (status.code != ErrorCode::OK) {
+          std::cerr << "Failed to get gait during transition: " << status.message << std::endl;
+          return false;
+        }
+      }
+    }
+    std::cout << "Gait changed to down climb stairs" << std::endl;
+    return true;
+  } catch (const std::exception& e) {
+    std::cerr << "Error changing gait: " << e.what() << std::endl;
+    return false;
+  }
+}
+
+void send_joystick_command(float left_x, float left_y, float right_x, float right_y) {
+  if (!change_gait_to_down_climb_stairs()) {
+    return;
+  }
+
+  JoystickCommand joy_command;
+  joy_command.left_x_axis = left_x;
+  joy_command.left_y_axis = left_y;
+  joy_command.right_x_axis = right_x;
+  joy_command.right_y_axis = right_y;
+
+  auto& high_controller = robot->GetHighLevelMotionController();
+  auto status = high_controller.SendJoyStickCommand(joy_command);
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "Failed to send joystick command: " << status.message << std::endl;
   }
 }
 
 int main(int argc, char* argv[]) {
-  // Bind SIGINT（Ctrl+C）
-  signal(SIGINT, signalHandler);
+  print_help();
 
-  std::string local_ip = "192.168.54.111";
-  // Configure local IP address for direct network connection to machine and initialize SDK
-  if (!robot.Initialize(local_ip)) {
-    std::cerr << "Robot SDK initialization failed." << std::endl;
-    robot.Shutdown();
+  std::cout << "MagicDog SDK C++ Example Program" << std::endl;
+
+  robot = std::make_unique<MagicRobot>();
+  if (!robot->Initialize("192.168.55.10")) {
+    std::cerr << "Initialization failed" << std::endl;
     return -1;
   }
 
-  // Connect to robot
-  auto status = robot.Connect();
+  auto status = robot->Connect();
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Connect robot failed"
-              << ", code: " << status.code
+    std::cerr << "Connection failed, code: " << status.code
               << ", message: " << status.message << std::endl;
-    robot.Shutdown();
+    robot->Shutdown();
     return -1;
   }
 
-  // Switch motion control level to high level controller, default is high level controller
-  status = robot.SetMotionControlLevel(ControllerLevel::HighLevel);
+  // Set motion control level to high level
+  status = robot->SetMotionControlLevel(ControllerLevel::HighLevel);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Switch robot motion control level failed"
-              << ", code: " << status.code
-              << ", message: " << status.message << std::endl;
-    robot.Shutdown();
+    std::cerr << "Failed to set motion control level: " << status.message << std::endl;
+    robot->Shutdown();
     return -1;
   }
 
-  // Set gait speed ratio
-  status = robot.GetHighLevelMotionController().SetGaitSpeedRatio(GaitMode::GAIT_DOWN_CLIMB_STAIRS, GaitSpeedRatio{0.25, 0.2, 0.4});
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Set gait speed ratio failed"
-              << ", code: " << status.code
-              << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
-  }
+  std::cout << "Program started, please use keys to control robot..." << std::endl;
 
-  // Get all gait speed ratio
-  AllGaitSpeedRatio gait_speed_ratios;
-  status = robot.GetHighLevelMotionController().GetAllGaitSpeedRatio(gait_speed_ratios);
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Get all gait speed ratio failed"
-              << ", code: " << status.code
-              << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
-  }
-
-  left_x_axis_gain.store(gait_speed_ratios.gait_speed_ratios[GaitMode::GAIT_DOWN_CLIMB_STAIRS].lateral_ratio);
-  left_y_axis_gain.store(gait_speed_ratios.gait_speed_ratios[GaitMode::GAIT_DOWN_CLIMB_STAIRS].straight_ratio);
-  right_x_axis_gain.store(gait_speed_ratios.gait_speed_ratios[GaitMode::GAIT_DOWN_CLIMB_STAIRS].turn_ratio);
-  right_y_axis_gain.store(0.0);
-
-  std::cout << "left_x_axis_gain: " << left_x_axis_gain.load() << ", left_y_axis_gain: " << left_y_axis_gain.load() << ", right_x_axis_gain: " << right_x_axis_gain.load() << ", right_y_axis_gain: " << right_y_axis_gain.load() << std::endl;
-
-  std::thread joy_thread(JoyThread);
-
-  print_help(argv[0]);
-
-  std::cout << "Press any key to continue (ESC to exit)..."
-            << std::endl;
-
-  auto change_gait_to_down_climb_stairs = [](auto& robot) -> bool {
-    GaitMode current_gait = GaitMode::GAIT_PASSIVE;
-    auto status = robot.GetHighLevelMotionController().GetGait(current_gait);
-    if (status.code != ErrorCode::OK) {
-      std::cerr << "Get robot gait failed"
-                << ", code: " << status.code
-                << ", message: " << status.message << std::endl;
-      return false;
-    }
-    if (current_gait != GaitMode::GAIT_DOWN_CLIMB_STAIRS) {
-      status = robot.GetHighLevelMotionController().SetGait(GaitMode::GAIT_DOWN_CLIMB_STAIRS);
-      if (status.code != ErrorCode::OK) {
-        std::cerr << "Set robot gait failed"
-                  << ", code: " << status.code
-                  << ", message: " << status.message << std::endl;
-        return false;
-      }
-    } else {
-      return true;
-    }
-
-    status = robot.GetHighLevelMotionController().GetGait(current_gait);
-    if (status.code != ErrorCode::OK) {
-      std::cerr << "Get robot gait failed"
-                << ", code: " << status.code
-                << ", message: " << status.message << std::endl;
-      return false;
-    }
-    while (current_gait != GaitMode::GAIT_DOWN_CLIMB_STAIRS) {
-      usleep(10000);
-      status = robot.GetHighLevelMotionController().GetGait(current_gait);
-      if (status.code != ErrorCode::OK) {
-        std::cerr << "Get robot gait failed"
-                  << ", code: " << status.code
-                  << ", message: " << status.message << std::endl;
-        return false;
-      }
-    }
-    return true;
-  };
-  // Wait for user input
-  while (1) {
+  while (running) {
+    std::cout << "Enter command: ";
     int key = getch();
-    if (key == 27)
-      break;  // ESC
+    if (key == 27) {  // ESC key
+      break;
+    }
 
-    std::cout << "Key ASCII: " << key << ", Character: " << static_cast<char>(key) << std::endl;
+    if (key == '3') {
+      std::string str_input;
+      std::cout << "Enter parameters: ";
+      std::getline(std::cin, str_input);
+      if (str_input.empty()) {
+        continue;
+      }
+
+      // Parse parameters
+      std::string cmd = str_input.substr(0, str_input.find(' '));
+      if (cmd.empty()) {
+        cmd = "102";
+      }
+      std::cout << "Execute trick: " << cmd << std::endl;
+      execute_trick(cmd);
+      continue;
+    }
+
     switch (key) {
-      case '1': {
-        RecoveryStand();
+      case '1':
+        recovery_stand();
         break;
-      }
-      case '2': {
-        BalanceStand();
+      case '2':
+        balance_stand();
         break;
-      }
-      case '3': {
-        ExecuteTrick();
+      case 'w':
+        send_joystick_command(0.0, 1.0, 0.0, 0.0);
         break;
-      }
-      case 'w': {
-        if (!change_gait_to_down_climb_stairs(robot)) {
-          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-          break;
-        }
-        JoyStickCommand(0.0, 1.0, 0.0, 0.0);  // Forward
+      case 's':
+        send_joystick_command(0.0, -1.0, 0.0, 0.0);
         break;
-      }
-      case 'a': {
-        if (!change_gait_to_down_climb_stairs(robot)) {
-          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-          break;
-        }
-        JoyStickCommand(-1.0, 0.0, 0.0, 0.0);  // Left
+      case 'a':
+        send_joystick_command(-1.0, 0.0, 0.0, 0.0);
         break;
-      }
-      case 's': {
-        if (!change_gait_to_down_climb_stairs(robot)) {
-          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-          break;
-        }
-        JoyStickCommand(0.0, -1.0, 0.0, 0.0);  // Backward
+      case 'd':
+        send_joystick_command(1.0, 0.0, 0.0, 0.0);
         break;
-      }
-      case 'd': {
-        if (!change_gait_to_down_climb_stairs(robot)) {
-          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-          break;
-        }
-        JoyStickCommand(1.0, 0.0, 0.0, 0.0);  // Right
+      case 't':
+        send_joystick_command(0.0, 0.0, -1.0, 0.0);
         break;
-      }
-      case 't': {
-        if (!change_gait_to_down_climb_stairs(robot)) {
-          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-          break;
-        }
-        JoyStickCommand(0.0, 0.0, -1.0, 0.0);  // Turn left
+      case 'g':
+        send_joystick_command(0.0, 0.0, 1.0, 0.0);
         break;
-      }
-      case 'g': {
-        if (!change_gait_to_down_climb_stairs(robot)) {
-          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-          break;
-        }
-        JoyStickCommand(0.0, 0.0, 1.0, 0.0);  // Turn right
+      case 'x':
+        send_joystick_command(0.0, 0.0, 0.0, 0.0);
         break;
-      }
-      case 'x': {
-        if (!change_gait_to_down_climb_stairs(robot)) {
-          std::cerr << "Change robot gait to down climb stairs failed" << std::endl;
-          break;
-        }
-        JoyStickCommand(0.0, 0.0, 0.0, 0.0);  // Stop
+      case '?':
+        print_help();
         break;
-      }
-      case 'v': {
-        CloseHeadMotor();
-        break;
-      }
-      case 'b': {
-        OpenHeadMotor();
-        break;
-      }
       default:
         std::cout << "Unknown key: " << key << std::endl;
         break;
     }
-
-    usleep(10000);
   }
-
-  is_running.store(false);
-  joy_thread.join();
 
   // Disconnect from robot
-  status = robot.Disconnect();
+  status = robot->Disconnect();
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Disconnect robot failed"
-              << ", code: " << status.code
+    std::cerr << "Disconnect robot failed, code: " << status.code
               << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
+  } else {
+    std::cout << "Robot disconnected" << std::endl;
   }
 
-  robot.Shutdown();
+  // Shutdown robot
+  robot->Shutdown();
+  std::cout << "Robot shutdown" << std::endl;
 
   return 0;
 }

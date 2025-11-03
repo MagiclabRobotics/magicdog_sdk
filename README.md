@@ -46,22 +46,6 @@ To build the examples inside this reposity:
   make -j8
 ```
 
-## Doc
-Installing Sphinx dependencies:
-```
-  pip install sphinx
-  pip install myst-parser
-  pip install linkify-it-py
-  pip install sphinx_rtd_theme
-```
-Build Sphinx documentation：
-```
-  cd doc/
-  make html
-```
-Enter doc/build/html directory, and open `index.html`
-
-
 ## C++ SDK Installation
 
 To build your own application with this SDK, you can install the magicdog_sdk to specified directory:
@@ -72,9 +56,9 @@ To build your own application with this SDK, you can install the magicdog_sdk to
   make -j8
   sudo make install
 ```
-You can refer to example/cpp/cmake_sample on how to import the `magicdog_sdk` into your CMake project.
+You can refer to example/cmake_sample on how to import the `magicdog_sdk` into your CMake project.
 ```
-  cd example/cpp/cmake_example
+  cd example/cmake_example
   mkdir build
   cd build
   cmake .. -DCMAKE_PREFIX_PATH=/opt/magic_robotics/magicdog_sdk
@@ -101,6 +85,6 @@ You can also add these environment variables to your shell profile (e.g., `~/.ba
 - Make sure to set the correct environment variables (`PYTHONPATH` and `LD_LIBRARY_PATH`) when using the Python SDK
 - The Python bindings are automatically generated during the build process
 
-For more reference information, please go to [MagicRobotics](https://github.com/MagiclabRobotics)
+> For more reference documentation, please go to [MagicLab Document Center](https://support.magiclab.top/)
 
-
+> For more reference information, please go to [MagicRobotics](https://github.com/MagiclabRobotics)

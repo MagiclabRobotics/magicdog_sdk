@@ -54,11 +54,10 @@ class MAGIC_EXPORT_API AudioController final : public NonCopyable {
   /**
    * @brief Switch TTS voice model.
    * @param tts_type TTS voice model type.
-   * @param config Speech configuration.
    * @param timeout_ms Timeout in milliseconds.
    * @return Operation status.
    */
-  Status SwitchTtsVoiceModel(TtsType tts_type, GetSpeechConfig& config, int timeout_ms = 5000);
+  Status SwitchTtsVoiceModel(TtsType tts_type, int timeout_ms = 5000);
 
   /**
    * @brief Get speech configuration.
@@ -109,12 +108,12 @@ class MAGIC_EXPORT_API AudioController final : public NonCopyable {
 
   /**
    * @brief Control voice data stream.
-   * @param raw_data Whether to send raw data.
-   * @param bf_data Whether to send bf data.
+   * @param enable_raw_data enable raw data stream.
+   * @param enable_bf_data enable bf data stream.
    * @param timeout_ms Timeout in milliseconds.
    * @return Operation status.
    */
-  Status ControlVoiceStream(bool raw_data, bool bf_data, int timeout_ms = 5000);
+  Status ControlVoiceStream(bool enable_raw_data, bool enable_bf_data, int timeout_ms = 5000);
 
   /**
    * @brief Subscribe to original voice data.
@@ -123,14 +122,23 @@ class MAGIC_EXPORT_API AudioController final : public NonCopyable {
   void SubscribeOriginVoiceData(const ByteMultiArrayCallback callback);
 
   /**
+   * @brief Unsubscribe from original voice data.
+   */
+  void UnsubscribeOriginVoiceData();
+
+  /**
    * @brief Subscribe to BF voice data.
-   * @brief 订阅BF语音数据
-   * @param callback 接收到BF语音数据后的处理回调
+   * @param callback Callback to handle received BF voice data.
    */
   void SubscribeBfVoiceData(const ByteMultiArrayCallback callback);
 
+  /**
+   * @brief Unsubscribe from BF voice data.
+   */
+  void UnsubscribeBfVoiceData();
+
  private:
-  std::atomic_bool is_shutdown_{true};  // 标记是否已初始化
+  std::atomic_bool is_shutdown_{true};  // Flag indicating whether initialized
 };
 
 }  // namespace magic::dog::audio

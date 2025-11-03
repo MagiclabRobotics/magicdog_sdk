@@ -8,15 +8,14 @@ MagicDog SDK Python 使用示例 - 高级运动控制结构体测试
 
 import sys
 import time
-
-try:
-    import magicdog_python as magicdog
-    from magicdog_python import TtsCommand, TtsPriority, TtsMode, GetSpeechConfig, ErrorCode
-    print("Successfully imported MagicDog Python module!")
-    print(f"Imported magicdog_python path: {sys.path}")
-except ImportError as e:
-    print(f"Import failed: {e}")
-    sys.exit(1)
+import magicdog_python as magicdog
+from magicdog_python import (
+    TtsCommand,
+    TtsPriority,
+    TtsMode,
+    GetSpeechConfig,
+    ErrorCode,
+)
 
 
 print("=== 测试系统状态结构体 ===")
@@ -32,49 +31,127 @@ error_status.code = magicdog.ErrorCode.SERVICE_NOT_READY
 error_status.message = "语音服务未就绪，请稍后重试"
 print(f"错误状态: 代码={error_status.code}, 消息='{error_status.message}'")
 
+# 测试状态值
+if success_status.code != magicdog.ErrorCode.OK:
+    print(f"错误: 成功状态代码不匹配")
+    sys.exit(1)
+if success_status.message != "系统运行正常，所有服务已就绪":
+    print(f"错误: 成功状态消息不匹配")
+    sys.exit(1)
+if error_status.code != magicdog.ErrorCode.SERVICE_NOT_READY:
+    print(f"错误: 错误状态代码不匹配")
+    sys.exit(1)
+if error_status.message != "语音服务未就绪，请稍后重试":
+    print(f"错误: 错误状态消息不匹配")
+    sys.exit(1)
+print("✓ 系统状态结构体测试通过")
+
 print("\n=== 测试控制器层级枚举 ===")
 controller_level = magicdog.ControllerLevel.HIGH_LEVEL
-print(f"控制器层级: {controller_level} (HIGH_LEVEL - 高层级控制器，负责路径规划和任务调度)")
+print(
+    f"控制器层级: {controller_level} (HIGH_LEVEL - 高层级控制器，负责路径规划和任务调度)"
+)
 
 low_level = magicdog.ControllerLevel.LOW_LEVEL
 print(f"控制器层级: {low_level} (LOW_LEVEL - 低层级控制器，负责关节控制和稳定性)")
 
+# 测试控制器层级枚举值
+if controller_level != magicdog.ControllerLevel.HIGH_LEVEL:
+    print(f"错误: 高层级控制器枚举值不匹配")
+    sys.exit(1)
+if low_level != magicdog.ControllerLevel.LOW_LEVEL:
+    print(f"错误: 低层级控制器枚举值不匹配")
+    sys.exit(1)
+print("✓ 控制器层级枚举测试通过")
+
 print("\n=== 测试摇杆控制指令 ===")
 # 测试前进指令
 forward_command = magicdog.JoystickCommand()
-forward_command.left_x_axis = 0.0      # 不左右移动
-forward_command.left_y_axis = 0.8      # 前进80%速度
-forward_command.right_x_axis = 0.0     # 不旋转
-forward_command.right_y_axis = 0.0     # 待定功能
+forward_command.left_x_axis = 0.0  # 不左右移动
+forward_command.left_y_axis = 0.8  # 前进80%速度
+forward_command.right_x_axis = 0.0  # 不旋转
+forward_command.right_y_axis = 0.0  # 待定功能
 print("前进指令:")
 print(f"  左摇杆X轴: {forward_command.left_x_axis} (0.0 = 不左右移动)")
 print(f"  左摇杆Y轴: {forward_command.left_y_axis} (0.8 = 前进80%速度)")
 print(f"  右摇杆X轴: {forward_command.right_x_axis} (0.0 = 不旋转)")
 print(f"  右摇杆Y轴: {forward_command.right_y_axis} (待定功能)")
 
+# 测试前进指令值
+if abs(forward_command.left_x_axis - 0.0) > 1e-6:
+    print(f"错误: 前进指令左摇杆X轴 期望值 0.0，实际值 {forward_command.left_x_axis}")
+    sys.exit(1)
+if abs(forward_command.left_y_axis - 0.8) > 1e-6:
+    print(f"错误: 前进指令左摇杆Y轴 期望值 0.8，实际值 {forward_command.left_y_axis}")
+    sys.exit(1)
+if abs(forward_command.right_x_axis - 0.0) > 1e-6:
+    print(f"错误: 前进指令右摇杆X轴 期望值 0.0，实际值 {forward_command.right_x_axis}")
+    sys.exit(1)
+if abs(forward_command.right_y_axis - 0.0) > 1e-6:
+    print(f"错误: 前进指令右摇杆Y轴 期望值 0.0，实际值 {forward_command.right_y_axis}")
+    sys.exit(1)
+print("✓ 前进指令测试通过")
+
 # 测试左转指令
 turn_left_command = magicdog.JoystickCommand()
-turn_left_command.left_x_axis = -0.6   # 左转60%速度
-turn_left_command.left_y_axis = 0.0    # 不前进后退
-turn_left_command.right_x_axis = 0.0   # 不旋转
-turn_left_command.right_y_axis = 0.0   # 待定功能
+turn_left_command.left_x_axis = -0.6  # 左转60%速度
+turn_left_command.left_y_axis = 0.0  # 不前进后退
+turn_left_command.right_x_axis = 0.0  # 不旋转
+turn_left_command.right_y_axis = 0.0  # 待定功能
 print("\n左转指令:")
 print(f"  左摇杆X轴: {turn_left_command.left_x_axis} (-0.6 = 左转60%速度)")
 print(f"  左摇杆Y轴: {turn_left_command.left_y_axis} (0.0 = 不前进后退)")
 print(f"  右摇杆X轴: {turn_left_command.right_x_axis} (0.0 = 不旋转)")
 print(f"  右摇杆Y轴: {turn_left_command.right_y_axis} (待定功能)")
 
+# 测试左转指令值
+if abs(turn_left_command.left_x_axis - -0.6) > 1e-6:
+    print(
+        f"错误: 左转指令左摇杆X轴 期望值 -0.6，实际值 {turn_left_command.left_x_axis}"
+    )
+    sys.exit(1)
+if abs(turn_left_command.left_y_axis - 0.0) > 1e-6:
+    print(f"错误: 左转指令左摇杆Y轴 期望值 0.0，实际值 {turn_left_command.left_y_axis}")
+    sys.exit(1)
+if abs(turn_left_command.right_x_axis - 0.0) > 1e-6:
+    print(
+        f"错误: 左转指令右摇杆X轴 期望值 0.0，实际值 {turn_left_command.right_x_axis}"
+    )
+    sys.exit(1)
+if abs(turn_left_command.right_y_axis - 0.0) > 1e-6:
+    print(
+        f"错误: 左转指令右摇杆Y轴 期望值 0.0，实际值 {turn_left_command.right_y_axis}"
+    )
+    sys.exit(1)
+print("✓ 左转指令测试通过")
+
 # 测试旋转指令
 rotate_command = magicdog.JoystickCommand()
-rotate_command.left_x_axis = 0.0       # 不左右移动
-rotate_command.left_y_axis = 0.0       # 不前进后退
-rotate_command.right_x_axis = 0.7      # 右旋转70%速度
-rotate_command.right_y_axis = 0.0      # 待定功能
+rotate_command.left_x_axis = 0.0  # 不左右移动
+rotate_command.left_y_axis = 0.0  # 不前进后退
+rotate_command.right_x_axis = 0.7  # 右旋转70%速度
+rotate_command.right_y_axis = 0.0  # 待定功能
 print("\n旋转指令:")
 print(f"  左摇杆X轴: {rotate_command.left_x_axis} (0.0 = 不左右移动)")
 print(f"  左摇杆Y轴: {rotate_command.left_y_axis} (0.0 = 不前进后退)")
 print(f"  右摇杆X轴: {rotate_command.right_x_axis} (0.7 = 右旋转70%速度)")
 print(f"  右摇杆Y轴: {rotate_command.right_y_axis} (待定功能)")
+
+# 测试旋转指令值
+
+if abs(rotate_command.left_x_axis - 0.0) > 1e-6:
+    print(f"错误: 旋转指令左摇杆X轴 期望值 0.0，实际值 {rotate_command.left_x_axis}")
+    sys.exit(1)
+if abs(rotate_command.left_y_axis - 0.0) > 1e-6:
+    print(f"错误: 旋转指令左摇杆Y轴 期望值 0.0，实际值 {rotate_command.left_y_axis}")
+    sys.exit(1)
+if abs(rotate_command.right_x_axis - 0.7) > 1e-6:
+    print(f"错误: 旋转指令右摇杆X轴 期望值 0.7，实际值 {rotate_command.right_x_axis}")
+    sys.exit(1)
+if abs(rotate_command.right_y_axis - 0.0) > 1e-6:
+    print(f"错误: 旋转指令右摇杆Y轴 期望值 0.0，实际值 {rotate_command.right_y_axis}")
+    sys.exit(1)
+print("✓ 旋转指令测试通过")
 
 print("\n=== 测试步态模式枚举 ===")
 # 测试常用步态
