@@ -14,43 +14,43 @@ using StateMonitorPtr = std::unique_ptr<StateMonitor>;
 
 /**
  * @class StateMonitor
- * @brief A class encapsulating state control functions, providing interfaces such as state query.
+ * @brief 封装状态控制功能的类，提供状态查询等接口。
  *
- * This class is typically used for state management of robots or intelligent devices, supporting state query and initialization,
- * and providing a resource release mechanism.
+ * 该类通常用于控制机器人或智能设备的状态管理，支持状态查询与初始化，
+ * 并提供资源释放机制。
  */
 
 class MAGIC_EXPORT_API StateMonitor final : public NonCopyable {
  public:
   /**
-   * @brief Constructor, creates a StateMonitor instance.
+   * @brief 构造函数，创建 StateMonitor 实例。
    */
   StateMonitor();
 
   /**
-   * @brief Destructor, releases resources of the StateMonitor instance.
+   * @brief 析构函数，释放 StateMonitor 实例资源。
    */
   ~StateMonitor();
 
   /**
-   * @brief Initialize the state controller.
-   * @return Whether initialization is successful.
+   * @brief 初始化状态控制器。
+   * @return 是否初始化成功。
    */
   bool Initialize();
 
   /**
-   * @brief Release resources and clean up the state controller.
+   * @brief 释放资源，清理状态控制器。
    */
   void Shutdown();
 
   /**
-   * @brief Get the current robot running state (aggregated state information).
-   * @return robot_state to receive the current robot state.
+   * @brief 获取当前机器人运行状态（聚合的状态信息）。
+   * @return robot_state 用于接收机器人当前状态。
    */
   RobotState GetCurrentState() const;
 
  private:
-  std::atomic_bool is_shutdown_{true};  // Indicates whether it has been initialized
+  std::atomic_bool is_shutdown_{true};  // 标记是否已初始化
 };
 
 }  // namespace magic::dog::monitor

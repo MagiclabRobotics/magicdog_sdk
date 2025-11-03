@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-MagicDog SDK Python Usage Example
+MagicDog SDK Python 使用示例
 
-This file demonstrates how to use MagicDog SDK Python bindings to control the robot.
+这个文件展示了如何使用 MagicDog SDK 的 Python 绑定来控制机器人。
 """
 
 import sys
@@ -12,20 +12,16 @@ import threading
 import tty
 import termios
 import os
-import logging
-from typing import Optional
 
-logging.basicConfig(
-    level=logging.INFO,  # Minimum log level
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+# 添加构建目录到 Python 路径
+sys.path.append('../../build')
 
 try:
     import magicdog_python as magicdog
-    logging.info("Successfully imported MagicDog Python module!")
+    print("成功导入 MagicDog Python 模块！")
 except ImportError as e:
-    logging.error(f"Import failed: {e}")
+    print(f"导入失败: {e}")
+    print("请先运行 build_python.sh 构建 Python 绑定")
     sys.exit(1)
 
 
@@ -37,58 +33,57 @@ exit_flag = False
 robot = None
 high_controller = None
 
-# Get single character input (no echo)
+# 获取单个字符输入（无回显）
 def getch():
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
     try:
         tty.setraw(sys.stdin.fileno())
         ch = sys.stdin.read(1)
-        logging.info(f"Received character: {ch}")
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     return ch
 
-# Position control standing
+# 位控站立
 def recovery_stand():
     global high_controller
     try:
-        # Set gait to position control standing
+        # 设置步态为位控站立
         status = high_controller.set_gait(magicdog.GaitMode.GAIT_STAND_R)
         if status.code != magicdog.ErrorCode.OK:
-            logging.error(f"Failed to set position control standing: {status.message}")
+            print(f"设置位控站立失败: {status.message}")
         else:
-            logging.info("Robot set to position control standing")
+            print("机器人已设置为位控站立")
     except Exception as e:
-        logging.error(f"Error executing position control standing: {e}")
+        print(f"执行位控站立时出错: {e}")
 
-# Force control standing
+# 力控站立
 def balance_stand():
     global high_controller
     try:
-        # Set gait to force control standing
+        # 设置步态为力控站立
         status = high_controller.set_gait(magicdog.GaitMode.GAIT_STAND_B)
         if status.code != magicdog.ErrorCode.OK:
-            logging.error(f"Failed to set force control standing: {status.message}")
+            print(f"设置力控站立失败: {status.message}")
         else:
-            logging.info("Robot set to force control standing")
+            print("机器人已设置为力控站立")
     except Exception as e:
-        logging.error(f"Error executing force control standing: {e}")
+        print(f"执行力控站立时出错: {e}")
 
-# Execute trick - lie down
+# 执行特技-趴下
 def execute_trick():
     global high_controller
     try:
-        # Execute lie down trick
+        # 执行趴下特技
         status = high_controller.execute_trick(magicdog.TrickAction.ACTION_LIE_DOWN)
         if status.code != magicdog.ErrorCode.OK:
-            logging.error(f"Failed to execute trick: {status.message}")
+            print(f"执行特技失败: {status.message}")
         else:
-            logging.info("Trick executed successfully")
+            print("特技执行成功")
     except Exception as e:
-        logging.error(f"Error executing trick: {e}")
+        print(f"执行特技时出错: {e}")
 
-# Switch gait to down climb stairs mode
+# 切换步态为下楼梯模式
 def change_gait_to_down_climb_stairs():
     global high_controller
     try:
@@ -96,46 +91,46 @@ def change_gait_to_down_climb_stairs():
         if current_gait != magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS:
             status = high_controller.set_gait(magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS)
             if status.code != magicdog.ErrorCode.OK:
-                logging.error(f"Failed to set down climb stairs gait: {status.message}")
+                print(f"设置下楼梯步态失败: {status.message}")
                 return False
             
-            # Wait for gait switch to complete
+            # 等待步态切换完成
             while high_controller.get_gait() != magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS:
                 time.sleep(0.01)
         return True
     except Exception as e:
-        logging.error(f"Error changing gait: {e}")
+        print(f"切换步态时出错: {e}")
         return False
 
-# Define a function to simulate joystick input based on key presses
+# 定义一个函数，根据按键模拟摇杆的输入
 def update_joy_command():
     global left_x, left_y, right_x, right_y, exit_flag
-    logging.info("Key function description:")
-    logging.info("  1        Function 1: Position control standing")
-    logging.info("  2        Function 2: Force control standing")
-    logging.info("  3        Function 3: Execute trick - lie down")
-    logging.info("  w        Move forward")
-    logging.info("  a        Move left")
-    logging.info("  s        Move backward")
-    logging.info("  d        Move right")
-    logging.info("  t        Turn left")
-    logging.info("  g        Turn right")
-    logging.info("  x        Stop movement")
-    logging.info("  ESC      Exit program")
+    print("按键功能说明:")
+    print("  1        功能1: 位控站立")
+    print("  2        功能2: 力控站立")
+    print("  3        功能3: 执行特技-趴下")
+    print("  w        向前移动")
+    print("  a        向左移动")
+    print("  x        向后移动")
+    print("  d        向右移动")
+    print("  t        左转向")
+    print("  g        右转向")
+    print("  s        停止移动")
+    print("  ESC      退出程序")
     
     while not exit_flag:
         key = getch()
-        if key == '\x1b':  # ESC key
+        if key == '\x1b':  # ESC键
             exit_flag = True
             break
         elif key == '1':
-            # Position control standing
+            # 位控站立
             recovery_stand()
         elif key == '2':
-            # Force control standing
+            # 力控站立
             balance_stand()
         elif key == '3':
-            # Execute trick - lie down
+            # 执行特技-趴下
             execute_trick()
         elif key == 'w':
             if change_gait_to_down_climb_stairs():
@@ -143,7 +138,7 @@ def update_joy_command():
                 left_x = 0.0
                 right_x = 0.0
                 right_y = 0.0
-        elif key == 's':
+        elif key == 'x':
             if change_gait_to_down_climb_stairs():
                 left_y = -1.0
                 left_x = 0.0
@@ -173,14 +168,14 @@ def update_joy_command():
                 left_y = 0.0
                 right_x = 1.0
                 right_y = 0.0
-        elif key == 'x':
+        elif key == 's':
             if change_gait_to_down_climb_stairs():
                 left_x = 0.0
                 left_y = 0.0
                 right_x = 0.0
                 right_y = 0.0
 
-# Joystick command sending thread
+# 摇杆命令发送线程
 def joy_thread(high_controller):
     global left_x, left_y, right_x, right_y, exit_flag
     while not exit_flag:
@@ -192,62 +187,64 @@ def joy_thread(high_controller):
 
         status = high_controller.send_joystick_command(joy_command)
         if status.code != magicdog.ErrorCode.OK:
-            logging.error(f"Failed to send joystick command: {status.message}")
+            print(f"发送摇杆命令失败: {status.message}")
             break
-        time.sleep(0.01)  # 10ms interval, consistent with C++ code
+        time.sleep(0.01)  # 10ms间隔，与C++代码保持一致
 
 def main():
-    """Main function"""
+    """主函数"""
     global robot, high_controller
     
-    logging.info("MagicDog SDK Python Example Program")
+    print("MagicDog SDK Python 示例程序")
 
     robot = magicdog.MagicRobot()
     if not robot.initialize("192.168.55.10"):
-        logging.error("Initialization failed")
+        print("初始化失败")
         return
+    
+    robot.set_timeout(5000)
     
     if not robot.connect():
-        logging.error("Connection failed")
+        print("连接失败")
         robot.shutdown()
         return
 
-    # Set motion control level to high level
+    # 设置运动控制级别为高级别
     status = robot.set_motion_control_level(magicdog.ControllerLevel.HIGH_LEVEL)
     if status.code != magicdog.ErrorCode.OK:
-        logging.error(f"Failed to set motion control level: {status.message}")
+        print(f"设置运动控制级别失败: {status.message}")
         robot.shutdown()
         return
 
-    # Get high level motion controller
+    # 获取高级别运动控制器
     high_controller = robot.get_high_level_motion_controller()
 
-    # Create a thread for receiving keyboard input
+    # 创建一个线程，用于接收键盘输入
     key_thread = threading.Thread(target=update_joy_command)
-    key_thread.daemon = True  # Set as daemon thread
+    key_thread.daemon = True  # 设置为守护线程
     key_thread.start()
     
-    # Create joystick command sending thread
+    # 创建摇杆命令发送线程
     joy_send_thread = threading.Thread(target=joy_thread, args=(high_controller,))
-    joy_send_thread.daemon = True  # Set as daemon thread
+    joy_send_thread.daemon = True  # 设置为守护线程
     joy_send_thread.start()
 
-    logging.info("Program started, please use keys to control robot...")
+    print("程序已启动，请使用按键控制机器人...")
     
-    # Main thread waits for exit signal
+    # 主线程等待退出信号
     global exit_flag
     try:
         while not exit_flag:
             time.sleep(0.1)
     except KeyboardInterrupt:
-        logging.info("\nReceived interrupt signal, exiting...")
+        print("\n收到中断信号，正在退出...")
         exit_flag = True
 
-    logging.info("Closing robot connection...")
+    print("正在关闭机器人连接...")
     robot.shutdown()
     robot.disconnect()
 
-    logging.info("\nExample program execution completed!")
+    print("\n示例程序执行完成！")
 
 if __name__ == "__main__":
     main() 

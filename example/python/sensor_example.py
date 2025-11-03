@@ -1,102 +1,100 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-MagicDog SDK Python Usage Example
+MagicDog SDK Python 使用示例
 
-This file demonstrates how to use MagicDog SDK Python bindings to control the robot.
+这个文件展示了如何使用 MagicDog SDK 的 Python 绑定来控制机器人。
 """
 
 import sys
 import time
-import logging
-from typing import Optional
 
-logging.basicConfig(
-    level=logging.INFO,  # Minimum log level
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+# 添加构建目录到 Python 路径，插入到最前面
+sys.path.insert(0, '../../build')
 
 try:
     import magicdog_python as magicdog
     from magicdog_python import TtsCommand, TtsPriority, TtsMode, GetSpeechConfig, ErrorCode
-    logging.info("Successfully imported MagicDog Python module!")
-    logging.info(f"Imported magicdog_python path: {sys.path}")
+    print("成功导入 MagicDog Python 模块！")
+    # 打印导入的 magicdog_python 的路径
+    print(f"导入的 magicdog_python 的路径: {sys.path}")
 except ImportError as e:
-    logging.error(f"Import failed: {e}")
+    print(f"导入失败: {e}")
+    print("请先运行 build_python.sh 构建 Python 绑定")
     sys.exit(1)
 
 def main():
-    """Main function"""
-    logging.info("MagicDog SDK Audio Python Example Program")
+    """主函数"""
+    print("MagicDog SDK Audio Python 示例程序")
     
     local_ip = "192.168.55.10"
     robot = magicdog.MagicRobot()
     if not robot.initialize(local_ip):
-        logging.error("Robot initialization failed")
+        print("机器人初始化失败")
         return
-        
+
+    robot.set_timeout(5000)
     if not robot.connect():
-        logging.error("Robot connection failed")
+        print("机器人连接失败")
         robot.shutdown()
         return
     
-    logging.info("Robot connected successfully")
+    print("机器人连接成功")
     
     sensor_controller = robot.get_sensor_controller()
-    # sensor_controller.subscribe_tof(lambda tof: logging.info(f"TOF: {len(tof.data)}"))
-    sensor_controller.subscribe_ultra(lambda ultra: logging.info(f"Ultra: {len(ultra.data)}"))
-    sensor_controller.subscribe_laser_scan(lambda laser_scan: logging.info(f"Laser Scan: {len(laser_scan.ranges)}"))
-    # sensor_controller.subscribe_imu(lambda imu: logging.info(f"IMU: {imu.orientation}"))
-    sensor_controller.subscribe_rgbd_color_camera_info(lambda camera_info: logging.info(f"RGBD Color Camera Info: {camera_info.K}"))
-    sensor_controller.subscribe_rgbd_depth_image(lambda depth_image: logging.info(f"RGBD Depth Image: {len(depth_image.data)}"))
-    sensor_controller.subscribe_rgbd_color_image(lambda color_image: logging.info(f"RGBD Color Image: {len(color_image.data)}"))
-    sensor_controller.subscribe_rgb_depth_camera_info(lambda camera_info: logging.info(f"RGB Depth Camera Info: {camera_info.K}"))
-    sensor_controller.subscribe_left_binocular_high_img(lambda img: logging.info(f"Left Binocular High Image: {len(img.data)}"))
-    sensor_controller.subscribe_left_binocular_low_img(lambda img: logging.info(f"Left Binocular Low Image: {len(img.data)}"))
-    sensor_controller.subscribe_right_binocular_low_img(lambda img: logging.info(f"Right Binocular Low Image: {len(img.data)}"))
+    # sensor_controller.subscribe_tof(lambda tof: print(f"TOF: {len(tof.data)}"))
+    sensor_controller.subscribe_ultra(lambda ultra: print(f"Ultra: {len(ultra.data)}"))
+    sensor_controller.subscribe_lidar(lambda lidar: print(f"Lidar: {len(lidar.ranges)}"))
+    # sensor_controller.subscribe_imu(lambda imu: print(f"IMU: {imu.orientation}"))
+    sensor_controller.subscribe_rgbd_color_camera_info(lambda camera_info: print(f"RGBD Color Camera Info: {camera_info.K}"))
+    sensor_controller.subscribe_rgbd_depth_image(lambda depth_image: print(f"RGBD Depth Image: {len(depth_image.data)}"))
+    sensor_controller.subscribe_rgbd_color_image(lambda color_image: print(f"RGBD Color Image: {len(color_image.data)}"))
+    sensor_controller.subscribe_rgb_depth_camera_info(lambda camera_info: print(f"RGB Depth Camera Info: {camera_info.K}"))
+    sensor_controller.subscribe_left_binocular_high_img(lambda img: print(f"Left Binocular High Image: {len(img.data)}"))
+    sensor_controller.subscribe_left_binocular_low_img(lambda img: print(f"Left Binocular Low Image: {len(img.data)}"))
+    sensor_controller.subscribe_right_binocular_low_img(lambda img: print(f"Right Binocular Low Image: {len(img.data)}"))
 
     status = sensor_controller.open_channel_switch()
     if status.code != ErrorCode.OK:
-        logging.error(f"Failed to open channel: {status.message}")
+        print(f"打开通道失败: {status.message}")
         robot.shutdown()
         return
 
-    status = sensor_controller.open_laser_scan()
+    status = sensor_controller.open_lidar()
     if status.code != ErrorCode.OK:
-        logging.error(f"Failed to open laser scan: {status.message}")
+        print(f"打开激光雷达失败: {status.message}")
         robot.shutdown()
         return
     
     status = sensor_controller.open_rgbd_camera()
     if status.code != ErrorCode.OK:
-        logging.error(f"Failed to open RGBD camera: {status.message}")
+        print(f"打开RGBD相机失败: {status.message}")
         robot.shutdown()
         return
     
     status = sensor_controller.open_binocular_camera()
     if status.code != ErrorCode.OK:
-        logging.error(f"Failed to open binocular camera: {status.message}")
+        print(f"打开立体相机失败: {status.message}")
         robot.shutdown()
         return
 
     time.sleep(10)
 
-    status = sensor_controller.close_laser_scan()
+    status = sensor_controller.close_lidar()
     if status.code != ErrorCode.OK:
-        logging.error(f"Failed to close laser scan: {status.message}")
+        print(f"关闭激光雷达失败: {status.message}")
         robot.shutdown()
         return
 
     status = sensor_controller.close_rgbd_camera()
     if status.code != ErrorCode.OK:
-        logging.error(f"Failed to close RGBD camera: {status.message}")
+        print(f"关闭RGBD相机失败: {status.message}")
         robot.shutdown()
         return
 
     status = sensor_controller.close_binocular_camera()
     if status.code != ErrorCode.OK:
-        logging.error(f"Failed to close binocular camera: {status.message}")
+        print(f"关闭立体相机失败: {status.message}")
         robot.shutdown()
         return
 
@@ -104,16 +102,16 @@ def main():
 
     status = sensor_controller.close_channel_switch()
     if status.code != ErrorCode.OK:
-        logging.error(f"Failed to close channel: {status.message}")
+        print(f"关闭通道失败: {status.message}")
         robot.shutdown()
         return
 
-    # Avoid unprocessed buffered data in lcm
-    time.sleep(30)
+    # 避免 lcm 中有缓冲数据未处理完
+    time.sleep(10)
 
     robot.disconnect()
     robot.shutdown()
-    logging.info("\nExample program execution completed!")
+    print("\n示例程序执行完成！")
 
 if __name__ == "__main__":
     main() 

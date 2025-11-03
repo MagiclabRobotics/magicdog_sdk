@@ -1,62 +1,60 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-MagicDog SDK Python Usage Example
+MagicDog SDK Python 使用示例
 
-This file demonstrates how to use MagicDog SDK Python bindings to control the robot.
+这个文件展示了如何使用 MagicDog SDK 的 Python 绑定来控制机器人。
 """
 
 import sys
 import time
 import threading
-import logging
-from typing import Optional
 
-logging.basicConfig(
-    level=logging.INFO,  # Minimum log level
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+# 添加构建目录到 Python 路径
+sys.path.append('../../build')
 
 try:
     import magicdog_python as magicdog
-    logging.info("Successfully imported MagicDog Python module!")
+    print("成功导入 MagicDog Python 模块！")
 except ImportError as e:
-    logging.error(f"Import failed: {e}")
+    print(f"导入失败: {e}")
+    print("请先运行 build_python.sh 构建 Python 绑定")
     sys.exit(1)
 
 def main():
-    """Main function"""
-    logging.info("MagicDog SDK Python Example Program")
+    """主函数"""
+    print("MagicDog SDK Python 示例程序")
     
     robot = magicdog.MagicRobot()
     if not robot.initialize("192.168.55.10"):
-        logging.error("Initialization failed")
+        print("初始化失败")
         return
+    
+    robot.set_timeout(5000)
     
     if not robot.connect():
-        logging.error("Connection failed")
+        print("连接失败")
         robot.shutdown()
         return
     
-    logging.info("Setting motion control level to high level")
+    print("设置运动控制级别为高级别")
     status = robot.set_motion_control_level(magicdog.ControllerLevel.HIGH_LEVEL)
     if status.code != magicdog.ErrorCode.OK:
-        logging.error(f"Failed to set motion control level: {status.message}")
+        print(f"设置运动控制级别失败: {status.message}")
         robot.shutdown()
         return
     
-    logging.info("Getting high level motion controller")
+    print("获取高级别运动控制器")
     high_controller = robot.get_high_level_motion_controller()
     
-    logging.info("Setting motion mode to passive")
+    print("设置运动模式为被动")
     status = high_controller.set_gait(magicdog.GaitMode.GAIT_PASSIVE)
     if status.code != magicdog.ErrorCode.OK:
-        logging.error(f"Failed to set motion mode: {status.message}")
+        print(f"设置运动模式失败: {status.message}")
         robot.shutdown()
         return
 
-    logging.info("Waiting for motion mode to change to passive")
+    print("等待运动模式变为被动")
     current_mode = magicdog.GaitMode.GAIT_DEFAULT
     while current_mode != magicdog.GaitMode.GAIT_PASSIVE:
         current_mode = high_controller.get_gait()
@@ -64,22 +62,25 @@ def main():
 
     time.sleep(2)
 
-    logging.info("Setting motion control level to low level")
+    print("设置运动控制级别为低级别")
     status = robot.set_motion_control_level(magicdog.ControllerLevel.LOW_LEVEL)
     if status.code != magicdog.ErrorCode.OK:
-        logging.error(f"Failed to set motion control level: {status.message}")
+        print(f"设置运动控制级别失败: {status.message}")
         robot.shutdown()
         return
 
-    logging.info("Waiting for motion mode to change to low level")
+    print("等待运动模式变为低级别")
     while current_mode != magicdog.GaitMode.GAIT_LOWLEVL_SDK:
         current_mode = high_controller.get_gait()
         time.sleep(0.1)
 
     time.sleep(2)
 
-    logging.info("Getting low level motion controller")
+    print("获取低级别运动控制器")
     low_controller = robot.get_low_level_motion_controller()
+
+    print("设置周期为2ms")
+    low_controller.set_period_ms(2)
 
     is_had_receive_leg_state = False
     mut = threading.Lock()
@@ -92,12 +93,12 @@ def main():
                 is_had_receive_leg_state = True
                 receive_state = msg
         if count % 1000 == 0:
-            logging.info("Received leg state data.")
+            print("receive leg state data.")
         count += 1
 
     low_controller.subscribe_leg_state(leg_state_callback)
     
-    logging.info("Waiting to receive leg state data")
+    print("等待收到腿部状态数据")
     while not is_had_receive_leg_state:
         time.sleep(0.002)
 
@@ -142,7 +143,7 @@ def main():
     robot.disconnect()
     robot.shutdown()
     
-    logging.info("\nExample program execution completed!")
+    print("\n示例程序执行完成！")
 
 if __name__ == "__main__":
     main() 

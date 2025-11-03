@@ -9,13 +9,15 @@
 namespace magic::dog {
 
 /************************************************************
- *                        Constants                         *
+ *                        常量信息                           *
  ************************************************************/
 
-constexpr uint8_t kLegJointNum = 12;  ///< Number of leg joints
+constexpr uint8_t kLegJointNum = 12;  ///< 下肢关节数量
+
+constexpr uint64_t kPeriodMs = 2;  ///< 控制器周期时间，单位为毫秒
 
 /************************************************************
- *                        Interface Info                    *
+ *                        接口信息                           *
  ************************************************************/
 
 enum ErrorCode {
@@ -32,236 +34,219 @@ struct Status {
 };
 
 /************************************************************
- *                        State Info                        *
+ *                        状态信息                           *
  ************************************************************/
 /**
- * @brief Fault information structure
+ * @brief 错误信息结构体
  *
- * Used to represent error information that occurs in the system, including error code and error message.
+ * 用于表示系统中发生的错误信息，包括错误代码和错误消息。
  */
 struct Fault {
   /**
-   * @brief Error code
+   * @brief 错误代码
    *
-   * Integer value used to identify the specific type of exception. Different error codes can correspond to different error types for error management and handling.
+   * 整型值，用于标识具体的异常类型。不同的错误代码可以对应不同的错误类型，便于错误管理和处理。
    */
   int32_t error_code;
 
   /**
-   * @brief Error message
+   * @brief 错误信息
    *
-   * Describes the specific information of the error, usually a detailed description of the cause of the error, which is convenient for debugging and locating problems.
+   * 描述错误发生的具体信息，通常是对错误原因的详细描述，便于调试和定位问题。
    */
   std::string error_message;
 };
 
 /**
- * @brief Battery state enumeration type
+ * @brief 电池状态枚举类型
  *
- * Indicates the current state of the battery, including multiple possible battery state options, used for battery state judgment and handling in the system.
+ * 表示电池当前的状态，包含多个可能的电池状态选项，用于系统中电池状态的判断和处理。
  */
 enum class BatteryState : int8_t {
-  UNKNOWN = 0,                ///< Unknown state
-  GOOD = 1,                   ///< Battery is good
-  OVERHEAT = 2,               ///< Battery overheated
-  DEAD = 3,                   ///< Battery damaged
-  OVERVOLTAGE = 4,            ///< Battery overvoltage
-  UNSPEC_FAILURE = 5,         ///< Unknown failure
-  COLD = 6,                   ///< Battery too cold
-  WATCHDOG_TIMER_EXPIRE = 7,  ///< Watchdog timer expired
-  SAFETY_TIMER_EXPIRE = 8,    ///< Safety timer expired
+  UNKNOWN = 0,                ///< 未知状态
+  GOOD = 1,                   ///< 电池状态良好
+  OVERHEAT = 2,               ///< 电池过热
+  DEAD = 3,                   ///< 电池损坏
+  OVERVOLTAGE = 4,            ///< 电池过电压
+  UNSPEC_FAILURE = 5,         ///< 未知故障
+  COLD = 6,                   ///< 电池过冷
+  WATCHDOG_TIMER_EXPIRE = 7,  ///< 看门狗定时器超时
+  SAFETY_TIMER_EXPIRE = 8,    ///< 安全定时器超时
 };
 
 /**
- * @brief Battery charge/discharge status
+ * @brief 电池充放电状态
  */
 enum class PowerSupplyStatus : int8_t {
-  UNKNOWN = 0,      ///< Unknown state
-  CHARGING = 1,     ///< Battery charging
-  DISCHARGING = 2,  ///< Battery discharging
-  NOTCHARGING = 3,  ///< Battery not charging/discharging
-  FULL = 4,         ///< Battery full
+  UNKNOWN = 0,      ///< 未知状态
+  CHARGING = 1,     ///< 电池充电中
+  DISCHARGING = 2,  ///< 电池放电中
+  NOTCHARGING = 3,  ///< 电池未充放电
+  FULL = 4,         ///< 电池充满
 };
 
 /**
- * @brief Battery management system data structure
+ * @brief 电池管理系统数据结构体
  *
- * Used to store battery-related information, including remaining battery percentage, battery health, battery state, and charge status.
+ * 用于存储电池的相关信息，包括电池的剩余电量、电池健康状况、电池状态和充电状态。
  */
 typedef struct bms_data {
   /**
-   * @brief Remaining battery percentage
+   * @brief 电池剩余电量
    *
-   * The current battery percentage, ranging from 0 to 100, indicating the remaining battery.
+   * 电池的当前电量百分比，范围从 0 到 100，表示电池的剩余电量。
    */
   float battery_percentage;
 
   /**
-   * @brief Battery health
+   * @brief 电池健康状态
    *
-   * The health status of the battery, usually a floating value representing battery performance. The higher the value, the better the battery.
+   * 电池的健康状况，通常是一个表示电池性能的浮动值。健康状况越高表示电池越好。
    */
   float battery_health;
 
   /**
-   * @brief Battery state
+   * @brief 电池状态
    *
-   * The current state of the battery, used to indicate different battery states.
+   * 电池当前的状态，用来表示电池的不同状态。
    */
   BatteryState battery_state;
 
   /**
-   * @brief Charge status
+   * @brief 充电状态
    *
-   * A boolean value indicating whether the battery is charging. `true` means charging, `false` means not charging.
+   * 一个布尔值，指示电池是否正在充电。`true` 表示电池正在充电，`false` 表示电池未充电。
    */
   PowerSupplyStatus power_supply_status;
 } BmsData;
 
 typedef struct robot_state {
-  std::vector<Fault> faults;  ///< List of fault information
-  BmsData bms_data;           ///< Battery management system data
+  std::vector<Fault> faults;  ///< 故障信息列表
+  BmsData bms_data;           ///< 电池管理系统数据
 } RobotState;
 
 /************************************************************
- *                        Motion Control                    *
+ *                        运动控制                           *
  ************************************************************/
 
 /**
- * @brief Controller level type, used to distinguish different controller responsibilities.
+ * @brief 运动控制器的层级类型，用于区分不同的控制器职责。
  */
 enum class ControllerLevel : int8_t {
   UNKKOWN = 0,
-  HighLevel = 1,  ///< High-level controller
-  LowLevel = 2    ///< Low-level controller
+  HighLevel = 1,  ///< 高层级控制器
+  LowLevel = 2    ///< 低层级控制器
 };
 
 /**
- * @brief Robot gait mode enumeration, suitable for state machine control
- */
-enum class GaitMode : int32_t {
-  GAIT_PASSIVE = 0,             // Drop (disable motor enable)
-  GAIT_STAND_R = 2,             // Position control stand, RecoveryStand
-  GAIT_STAND_B = 3,             // Force control stand, pose show, BalanceStand
-  GAIT_RUN_FAST = 8,            // Fast run
-  GAIT_DOWN_CLIMB_STAIRS = 9,   // Down stairs => blind walk => slow run
-  GAIT_TROT = 10,               // Trot
-  GAIT_PRONK = 11,              // Jump
-  GAIT_BOUND = 12,              // Bound (front-back jump)
-  GAIT_AMBLE = 14,              // Amble (cross step)
-  GAIT_CRAWL = 29,              // Crawl
-  GAIT_LOWLEVL_SDK = 30,        // Low-level SDK gait
-  GAIT_WALK = 39,               // Walk
-  GAIT_UP_CLIMB_STAIRS = 56,    // Up stairs (all terrain)
-  GAIT_RL_TERRAIN = 110,        // All terrain
-  GAIT_RL_FALL_RECOVERY = 111,  // Fall recovery
-  GAIT_RL_HAND_STAND = 112,     // Handstand
-  GAIT_RL_FOOT_STAND = 113,     // Upright
-  GAIT_ENTER_RL = 1001,         // Enter RL
-  GAIT_DEFAULT = 99,            // Default
-  GAIT_NONE = 9999,             // No gait
-};
-
-/**
- * @brief Humanoid robot trick action enumeration (corresponding to action ID)
- */
-enum class TrickAction : int32_t {
-  ACTION_NONE = 0,
-  ACTION_WIGGLE_HIP = 26,             // Wiggle hip
-  ACTION_SWING_BODY = 27,             // Swing body
-  ACTION_STRETCH = 28,                // Stretch
-  ACTION_STOMP = 29,                  // Stomp
-  ACTION_JUMP_JACK = 30,              // Jump jack
-  ACTION_SPACE_WALK = 31,             // Space walk
-  ACTION_IMITATE = 32,                // Imitate
-  ACTION_SHAKE_HEAD = 33,             // Shake head
-  ACTION_PUSH_UP = 34,                // Push up
-  ACTION_CHEER_UP = 35,               // Cheer up
-  ACTION_HIGH_FIVES = 36,             // High fives
-  ACTION_SCRATCH = 37,                // Scratch
-  ACTION_HIGH_JUMP = 38,              // High jump
-  ACTION_SWING_DANCE = 39,            // Swing dance
-  ACTION_LEAP_FROG = 40,              // Leap frog
-  ACTION_BACK_FLIP = 41,              // Back flip
-  ACTION_FRONT_FLIP = 42,             // Front flip
-  ACTION_SPIN_JUMP_LEFT = 43,         // Spin jump left 70 degrees
-  ACTION_SPIN_JUMP_RIGHT = 44,        // Spin jump right 70 degrees
-  ACTION_JUMP_FRONT = 45,             // Jump forward 0.5m
-  ACTION_ACT_CUTE = 46,               // Act cute
-  ACTION_BOXING = 47,                 // Boxing
-  ACTION_SIDE_SOMERSAULT = 48,        // Side somersault
-  ACTION_RANDOM_DANCE = 49,           // Random dance
-  ACTION_LEFT_SIDE_SOMERSAULT = 84,   // Left side somersault
-  ACTION_RIGHT_SIDE_SOMERSAULT = 85,  // Right side somersault
-  ACTION_DANCE2 = 91,                 // Dance 2
-  ACTION_EMERGENCY_STOP = 101,        // Emergency stop
-  ACTION_LIE_DOWN = 102,              // Lie down
-  ACTION_RECOVERY_STAND = 103,        // Stand up
-  ACTION_HAPPY_NEW_YEAR = 105,        // New Year greeting
-  ACTION_SLOW_GO_FRONT = 108,         // Come here
-  ACTION_SLOW_GO_BACK = 109,          // Go back
-  ACTION_BACK_HOME = 110,             // Go home
-  ACTION_LEAVE_HOME = 111,            // Leave home
-  ACTION_TURN_AROUND = 112,           // Turn around
-  ACTION_DANCE = 115,                 // Dance
-  ACTION_ROLL_ABOUT = 116,            // Roll about
-  ACTION_SHAKE_RIGHT_HAND = 117,      // Shake right hand
-  ACTION_SHAKE_LEFT_HAND = 118,       // Shake left hand
-  ACTION_SIT_DOWN = 119,              // Sit down
-};
-
-/**
- * @brief High-level motion control joystick command data structure
+ * @brief 高层运动控制摇杆指令的数据结构
  */
 struct JoystickCommand {
   /**
-   * @brief X-axis value of the left joystick
+   * @brief 左侧摇杆的X轴方向值
    *
-   * This value represents the input of the left joystick along the X-axis, ranging from -1.0 to 1.0.
-   * -1.0 means left, 1.0 means right, 0 means neutral.
+   * 该值表示左侧摇杆沿X轴方向的输入，范围从 -1.0 到 1.0。
+   * -1.0 表示左移，1.0 表示右移，0 表示中立位置。
    */
   float left_x_axis;
 
   /**
-   * @brief Y-axis value of the left joystick
+   * @brief 左侧摇杆的Y轴方向值
    *
-   * This value represents the input of the left joystick along the Y-axis, ranging from -1.0 to 1.0.
-   * -1.0 means down, 1.0 means up, 0 means neutral.
+   * 该值表示左侧摇杆沿Y轴方向的输入，范围从 -1.0 到 1.0。
+   * -1.0 表示下移，1.0 表示上移，0 表示中立位置。
    */
   float left_y_axis;
 
   /**
-   * @brief X-axis value of the right joystick
+   * @brief 右侧摇杆的X轴方向值
    *
-   * This value represents the rotation of the right joystick along the Z-axis, ranging from -1.0 to 1.0.
-   * -1.0 means rotate left, 1.0 means rotate right, 0 means neutral.
+   * 该值表示右侧摇杆沿Z轴方向的旋转，范围从 -1.0 到 1.0。
+   * -1.0 表示左旋转，1.0 表示右旋转，0 表示中立位置。
    */
   float right_x_axis;
 
   /**
-   * @brief Y-axis value of the right joystick, TBD
+   * @brief 右侧摇杆的Y轴方向值，待定
    */
   float right_y_axis;
 };
-
 /**
- * @brief Gait and corresponding speed ratios for forward, lateral, and turning
+ * @brief 机器人状态枚举，适用于状态机控制
  */
-struct GaitSpeedRatio {
-  double straight_ratio;
-  double turn_ratio;
-  double lateral_ratio;
+enum class GaitMode : int32_t {
+  GAIT_PASSIVE           = 0,     // 掉落（关闭电机使能）
+  GAIT_STAND_R           = 2,     // 位控站立、RecoveryStand
+  GAIT_STAND_B           = 3,     // 力控站立、姿态展示、BalanceStand
+  GAIT_RUN_FAST          = 8,     // 快跑
+  GAIT_DOWN_CLIMB_STAIRS = 9,     // 下爬楼梯=>盲走=>慢跑
+  GAIT_TROT              = 10,    // 小跑
+  GAIT_PRONK             = 11,    // 跳跃
+  GAIT_BOUND             = 12,    // 前后跳
+  GAIT_AMBLE             = 14,    // 交叉步
+  GAIT_CRAWL             = 29,    // 爬行
+  GAIT_LOWLEVL_SDK       = 30,    // 低层SDK步态
+  GAIT_WALK              = 39,    // 缓走
+  GAIT_UP_CLIMB_STAIRS   = 56,    // 上爬楼梯（全地形）
+  GAIT_RL_TERRAIN        = 110,   // 全地形
+  GAIT_RL_FALL_RECOVERY  = 111,   // 跌倒爬起
+  GAIT_RL_HAND_STAND     = 112,   // 倒立
+  GAIT_RL_FOOT_STAND     = 113,   // 正立
+  GAIT_ENTER_RL          = 1001,  // 进入RL
+  GAIT_DEFAULT           = 99,    // 默认
+  GAIT_NONE              = 9999,  // 无步态
 };
 
 /**
- * @brief All gaits and corresponding speed ratios for forward, lateral, and turning
+ * @brief 人形机器人动作指令枚举（对应动作ID）
  */
-struct AllGaitSpeedRatio {
-  std::map<GaitMode, GaitSpeedRatio> gait_speed_ratios;
+enum class TrickAction : int32_t {
+  ACTION_NONE                  = 0,
+  ACTION_WIGGLE_HIP            = 26,   // 扭屁股
+  ACTION_SWING_BODY            = 27,   // 甩身
+  ACTION_STRETCH               = 28,   // 伸懒腰
+  ACTION_STOMP                 = 29,   // 跺脚
+  ACTION_JUMP_JACK             = 30,   // 开合跳
+  ACTION_SPACE_WALK            = 31,   // 太空步
+  ACTION_IMITATE               = 32,   // 模仿
+  ACTION_SHAKE_HEAD            = 33,   // 摇头
+  ACTION_PUSH_UP               = 34,   // 俯卧撑
+  ACTION_CHEER_UP              = 35,   // 加油
+  ACTION_HIGH_FIVES            = 36,   // 击掌
+  ACTION_SCRATCH               = 37,   // 挠痒
+  ACTION_HIGH_JUMP             = 38,   // 跳高
+  ACTION_SWING_DANCE           = 39,   // 摇摆舞
+  ACTION_LEAP_FROG             = 40,   // 蛙跳
+  ACTION_BACK_FLIP             = 41,   // 后空翻
+  ACTION_FRONT_FLIP            = 42,   // 前空翻
+  ACTION_SPIN_JUMP_LEFT        = 43,   // 旋转左跳70度
+  ACTION_SPIN_JUMP_RIGHT       = 44,   // 旋转右跳70度
+  ACTION_JUMP_FRONT            = 45,   // 前跳0.5米
+  ACTION_ACT_CUTE              = 46,   // 撒娇
+  ACTION_BOXING                = 47,   // 打拳
+  ACTION_SIDE_SOMERSAULT       = 48,   // 侧空翻
+  ACTION_RANDOM_DANCE          = 49,   // 随机跳舞
+  ACTION_LEFT_SIDE_SOMERSAULT  = 84,   // 左侧侧空翻
+  ACTION_RIGHT_SIDE_SOMERSAULT = 85,   // 右侧侧空翻
+  ACTION_DANCE2                = 91,   // 跳舞2
+  ACTION_EMERGENCY_STOP        = 101,  // 急停
+  ACTION_LIE_DOWN              = 102,  // 趴下
+  ACTION_RECOVERY_STAND        = 103,  // 起立
+  ACTION_HAPPY_NEW_YEAR        = 105,  // 拜年=作揖
+  ACTION_SLOW_GO_FRONT         = 108,  // 过来
+  ACTION_SLOW_GO_BACK          = 109,  // 后退
+  ACTION_BACK_HOME             = 110,  // 回窝
+  ACTION_LEAVE_HOME            = 111,  // 离窝
+  ACTION_TURN_AROUND           = 112,  // 转圈
+  ACTION_DANCE                 = 115,  // 跳舞
+  ACTION_ROLL_ABOUT            = 116,  // 打滚
+  ACTION_SHAKE_RIGHT_HAND      = 117,  // 握右手
+  ACTION_SHAKE_LEFT_HAND       = 118,  // 握左手
+  ACTION_SIT_DOWN              = 119,  // 坐下
 };
 
 /**
- * @brief Single leg joint control command
+ * @brief 单个下肢关节的控制命令
  */
 struct SingleLegJointCommand {
   float q_des = 0.0;    // desired joint position
@@ -269,19 +254,19 @@ struct SingleLegJointCommand {
   float tau_des = 0.0;  // desired feed-forward torque
 
   float kp = 0.0;  // P gain, must be positive
-  float kd = 0.0;  // D gain, must be positive
+  float kd = 0.0;  // D gain, must be positive, must be positive
 };
 
 /**
- * @brief Whole leg joint control command
+ * @brief 整个下肢控制命令
  */
 struct LegJointCommand {
-  int64_t timestamp;                                    ///< Timestamp (ns)
-  std::array<SingleLegJointCommand, kLegJointNum> cmd;  ///< Command array, in order of left and right
+  int64_t timestamp;                                    ///< 时间戳（单位：纳秒）
+  std::array<SingleLegJointCommand, kLegJointNum> cmd;  ///< 控制命令数组，依次为左手和右手
 };
 
 /**
- * @brief Single leg joint state
+ * @brief 单个下肢关节的状态
  */
 struct SingleLegJointState {
   float q = 0.0;
@@ -290,186 +275,186 @@ struct SingleLegJointState {
 };
 
 /**
- * @brief Whole leg state information
+ * @brief 整个下肢状态信息
  */
 struct LegState {
-  int64_t timestamp;                                    ///< Timestamp (ns)
-  std::array<SingleLegJointState, kLegJointNum> state;  ///< All leg joint states
+  int64_t timestamp;                                    ///< 时间戳（单位：纳秒）
+  std::array<SingleLegJointState, kLegJointNum> state;  ///< 所有下肢关节状态
 };
 
 /************************************************************
- *                        Speech Control                    *
+ *                        语音控制                           *
  ************************************************************/
 
 /**
- * @brief TTS playback priority level
+ * @brief TTS 播报优先级等级
  *
- * Used to control interruption behavior between different TTS tasks. Higher priority tasks will interrupt currently playing lower priority tasks.
+ * 用于控制不同TTS任务之间的中断行为。优先级越高的任务将中断当前低优先级任务的播放。
  */
 enum class TtsPriority : int8_t {
-  HIGH = 0,    ///< Highest priority, e.g., low battery warning, emergency alert
-  MIDDLE = 1,  ///< Medium priority, e.g., system prompt, status broadcast
-  LOW = 2      ///< Lowest priority, e.g., daily voice chat, background broadcast
+  HIGH = 0,    ///< 最高优先级，例如：低电告警、紧急提醒
+  MIDDLE = 1,  ///< 中优先级，例如：系统提示、状态播报
+  LOW = 2      ///< 最低优先级，例如：日常语音对话、背景播报
 };
 
 /**
- * @brief Task scheduling strategy under the same priority
+ * @brief 同一优先级下的任务调度策略
  *
- * Used to refine the playback order and clearing logic of multiple TTS tasks under the same priority.
+ * 用于细化控制在相同优先级条件下多个TTS任务的播放顺序和清除逻辑。
  */
 enum class TtsMode : int8_t {
-  CLEARTOP = 0,    ///< Clear all tasks of current priority (including playing and waiting queue), play this request immediately
-  ADD = 1,         ///< Append this request to the end of the current priority queue, play in order (do not interrupt current playback)
-  CLEARBUFFER = 2  ///< Clear unplayed requests in the queue, keep current playback, then play this request
+  CLEARTOP = 0,    ///< 清空当前优先级所有任务（包括正在播放和等待队列），立即播放本次请求
+  ADD = 1,         ///< 将本次请求追加到当前优先级队列尾部，顺序播放（不打断当前播放）
+  CLEARBUFFER = 2  ///< 清空队列中未播放的请求，保留当前播放，之后播放本次请求
 };
 
 /**
- * @brief TTS (Text-To-Speech) playback command structure
+ * @brief TTS（Text-To-Speech）播放命令结构体
  *
- * Used to describe the complete information of a TTS playback request, supporting unique ID, text content, priority control, and scheduling mode under the same priority.
+ * 用于描述一次TTS播放请求的完整信息，支持设置唯一标识、文本内容、优先级控制以及相同优先级下的调度模式。
  *
- * Example: When playing weather broadcast, battery reminder, etc., the playback order and interruption behavior are determined according to priority and mode.
+ * 场景举例：播放天气播报、电量提醒等语音内容时，根据优先级和模式决定播报顺序和中断行为。
  */
 typedef struct tts_cmd {
   /**
-   * @brief Unique ID of TTS task
+   * @brief TTS任务唯一ID
    *
-   * Used to identify a TTS task, and track TTS status (such as start, finish, etc.) in subsequent callbacks.
-   * For example: "id_01"
+   * 用于标识一次TTS任务，在后续回调中追踪TTS状态（如开始播放、播放完成等）。
+   * 例如："id_01"
    */
   std::string id;
   /**
-   * @brief Text content to play
+   * @brief 要播放的文本内容
    *
-   * Supports any readable UTF-8 string, e.g., "Hello, welcome to the intelligent voice system."
+   * 支持任意可朗读的UTF-8字符串，例如："你好，欢迎使用智能语音系统。"
    */
   std::string content;
   /**
-   * @brief Playback priority
+   * @brief 播报优先级
    *
-   * Controls the interruption relationship between different TTS requests. Higher priority requests will interrupt currently playing lower priority requests.
+   * 控制不同TTS请求之间的中断关系，优先级越高的请求会打断正在播放的低优先级请求。
    */
   TtsPriority priority;
   /**
-   * @brief Scheduling mode under the same priority
+   * @brief 同优先级下的调度模式
    *
-   * Controls the processing logic of multiple TTS requests under the same priority, avoiding unlimited expansion of priority values.
+   * 控制在相同优先级情况下多个TTS请求的处理逻辑，避免无限扩展优先级值。
    */
   TtsMode mode;
 } TtsCommand;
 
 /************************************************************
- *                         Sensors                          *
+ *                         传感器                            *
  ************************************************************/
 
 /**
- * @brief IMU data structure, including timestamp, orientation, angular velocity, acceleration, and temperature
+ * @brief IMU 数据结构体，包含时间戳、姿态、角速度、加速度和温度信息
  */
 struct Imu {
-  int64_t timestamp;                          ///< Timestamp (ns), indicates the time point of IMU data acquisition
-  std::array<double, 4> orientation;          ///< Orientation quaternion (w, x, y, z), used to represent spatial orientation, avoiding gimbal lock of Euler angles
-  std::array<double, 3> angular_velocity;     ///< Angular velocity (rad/s), angular velocity around X, Y, Z axes, usually from gyroscope
-  std::array<double, 3> linear_acceleration;  ///< Linear acceleration (m/s^2), X, Y, Z axis linear acceleration, usually from accelerometer
-  float temperature;                          ///< Temperature (Celsius or other, should be specified when used)
+  int64_t timestamp;              ///< 时间戳（单位：纳秒），表示该IMU数据采集的时间点
+  double orientation[4];          ///< 姿态四元数（w, x, y, z），用于表示空间姿态，避免欧拉角万向锁问题
+  double angular_velocity[3];     ///< 角速度（单位：rad/s），绕X、Y、Z轴的角速度，通常来自陀螺仪
+  double linear_acceleration[3];  ///< 线加速度（单位：m/s^2），X、Y、Z轴的线性加速度，通常来自加速度计
+  float temperature;              ///< 温度（单位：摄氏度或其他，应在使用时明确）
 };
 
 /**
- * @brief Header structure, including timestamp and frame name
+ * @brief Header结构，包含时间戳与帧名
  */
 struct Header {
-  int64_t stamp;         ///< Timestamp, unit: ns
-  std::string frame_id;  ///< Coordinate frame name
+  int64_t stamp;         ///< 时间戳，单位：纳秒
+  std::string frame_id;  ///< 坐标系名称
 };
 
 /**
- * @brief Point cloud field description structure, corresponding to ROS2 sensor_msgs::msg::PointField.
+ * @brief 点云字段描述结构体，对应于ROS2中的sensor_msgs::msg::PointField。
  */
 struct PointField {
-  std::string name;  ///< Field name, e.g., "x", "y", "z", "intensity", etc.
-  int32_t offset;    ///< Start byte offset
-  int8_t datatype;   ///< Data type (corresponding constant)
-  int32_t count;     ///< Number of elements in this field
+  std::string name;  ///< 字段名，例如"x"、"y"、"z"、"intensity"等
+  int32_t offset;    ///< 起始字节偏移
+  int8_t datatype;   ///< 数据类型（对应常量）
+  int32_t count;     ///< 该字段包含的元素数量
 };
 
 /**
- * @brief Generic point cloud data structure, similar to ROS2 sensor_msgs::msg::PointCloud2
+ * @brief 通用点云数据结构，类似于 ROS2 的 sensor_msgs::msg::PointCloud2
  */
 struct PointCloud2 {
-  Header header;  ///< Standard message header
+  Header header;  ///< 标准消息头
 
-  int32_t height;  ///< Number of rows
-  int32_t width;   ///< Number of columns
+  int32_t height;  ///< 行数
+  int32_t width;   ///< 列数
 
-  std::vector<PointField> fields;  ///< Point field array
+  std::vector<PointField> fields;  ///< 点字段数组
 
-  bool is_bigendian;   ///< Endianness
-  int32_t point_step;  ///< Number of bytes per point
-  int32_t row_step;    ///< Number of bytes per row
+  bool is_bigendian;   ///< 字节序
+  int32_t point_step;  ///< 每个点占用的字节数
+  int32_t row_step;    ///< 每行占用的字节数
 
-  std::vector<uint8_t> data;  ///< Raw point cloud data (packed by field)
+  std::vector<uint8_t> data;  ///< 原始点云数据（按字段打包）
 
-  bool is_dense;  ///< Whether it is a dense point cloud (no invalid points)
+  bool is_dense;  ///< 是否为稠密点云（无无效点）
 };
 
 /**
- * @brief Image data structure, supports multiple encoding formats
+ * @brief 图像数据结构，支持多种编码格式
  */
 struct Image {
   Header header;
 
-  int32_t height;  ///< Image height (pixels)
-  int32_t width;   ///< Image width (pixels)
+  int32_t height;  ///< 图像高度（像素）
+  int32_t width;   ///< 图像宽度（像素）
 
-  std::string encoding;  ///< Image encoding type, such as "rgb8", "mono8", "bgr8"
-  bool is_bigendian;     ///< Whether the data is in big-endian mode
-  int32_t step;          ///< Number of bytes per image row
+  std::string encoding;  ///< 图像编码类型，如 "rgb8", "mono8", "bgr8"
+  bool is_bigendian;     ///< 数据是否为大端模式
+  int32_t step;          ///< 每行图像占用的字节数
 
-  std::vector<uint8_t> data;  ///< Raw image byte data
+  std::vector<uint8_t> data;  ///< 原始图像字节数据
 };
 
 /**
- * @brief Camera intrinsic and distortion information, usually published with Image message
+ * @brief 相机内参与畸变信息，通常与 Image 消息一起发布
  */
 struct CameraInfo {
   Header header;
 
-  int32_t height;  ///< Image height (rows)
-  int32_t width;   ///< Image width (columns)
+  int32_t height;  ///< 图像高度（行数）
+  int32_t width;   ///< 图像宽度（列数）
 
-  std::string distortion_model;  ///< Distortion model, e.g., "plumb_bob"
+  std::string distortion_model;  ///< 畸变模型，例如 "plumb_bob"
 
-  std::vector<double> D;  ///< Distortion parameter array
+  std::vector<double> D;  ///< 畸变参数数组
 
-  std::array<double, 9> K;   ///< Camera intrinsic matrix
-  std::array<double, 9> R;   ///< Rectification matrix
-  std::array<double, 12> P;  ///< Projection matrix
+  double K[9];   ///< 相机内参矩阵
+  double R[9];   ///< 矫正矩阵
+  double P[12];  ///< 投影矩阵
 
-  int32_t binning_x;  ///< Horizontal binning factor
-  int32_t binning_y;  ///< Vertical binning factor
+  int32_t binning_x;  ///< 水平binning系数
+  int32_t binning_y;  ///< 垂直binning系数
 
-  int32_t roi_x_offset;  ///< ROI start x
-  int32_t roi_y_offset;  ///< ROI start y
-  int32_t roi_height;    ///< ROI height
-  int32_t roi_width;     ///< ROI width
-  bool roi_do_rectify;   ///< Whether to rectify
+  int32_t roi_x_offset;  ///< ROI起始x
+  int32_t roi_y_offset;  ///< ROI起始y
+  int32_t roi_height;    ///< ROI高度
+  int32_t roi_width;     ///< ROI宽度
+  bool roi_do_rectify;   ///< 是否进行矫正
 };
 
 /**
- * @brief Trinocular camera frame data structure, including acquisition/decoding time and three image frames
+ * @brief 三目相机帧数据结构，包含采集/解码时间和三个图像帧
  */
 struct TrinocularCameraFrame {
-  Header header;  ///< Common message header (timestamp + frame_id)
+  Header header;  ///< 通用消息头（时间戳+frame_id）
 
-  int64_t vin_time;     ///< Image acquisition timestamp, unit: ns
-  int64_t decode_time;  ///< Image decoding completion timestamp, unit: ns
+  int64_t vin_time;     ///< 图像采集时间戳，单位：纳秒
+  int64_t decode_time;  ///< 图像解码完成时间戳，单位：纳秒
 
-  std::vector<uint8_t> imgfl_array;  ///< Left image data
-  std::vector<uint8_t> imgf_array;   ///< Middle image data
-  std::vector<uint8_t> imgfr_array;  ///< Right image data
+  std::vector<uint8_t> imgfl_array;  ///< 左目图像数据
+  std::vector<uint8_t> imgf_array;   ///< 中目图像数据
+  std::vector<uint8_t> imgfr_array;  ///< 右目图像数据
 };
 
 /**
- * @brief Compressed image data structure, supports multiple compression formats
+ * @brief 压缩图像数据结构，支持多种压缩格式
  */
 struct CompressedImage {
   Header header;
@@ -479,7 +464,7 @@ struct CompressedImage {
 };
 
 /**
- * @brief Lidar data structure, supports multiple formats
+ * @brief 激光雷达数据结构，支持多种格式
  */
 struct LaserScan {
   Header header;
@@ -496,7 +481,7 @@ struct LaserScan {
 };
 
 /**
- * @brief Multi-dimensional array dimension description
+ * @brief 多维数组维度描述
  */
 struct MultiArrayDimension {
   std::string label;
@@ -505,7 +490,7 @@ struct MultiArrayDimension {
 };
 
 /**
- * @brief Multi-dimensional array layout description
+ * @brief 多维数组布局描述
  */
 struct MultiArrayLayout {
   int32_t dim_size;
@@ -514,7 +499,7 @@ struct MultiArrayLayout {
 };
 
 /**
- * @brief Float multi-dimensional array
+ * @brief 浮点数多维数组
  */
 struct Float32MultiArray {
   MultiArrayLayout layout;
@@ -522,7 +507,7 @@ struct Float32MultiArray {
 };
 
 /**
- * @brief Byte array
+ * @brief 字节数组
  */
 struct ByteMultiArray {
   MultiArrayLayout layout;
@@ -530,14 +515,24 @@ struct ByteMultiArray {
 };
 
 /**
- * @brief 8-bit integer data structure
+ * @brief TOF数据结构
+ */
+using Tof = Float32MultiArray;
+
+/**
+ * @brief 超声波数据结构
+ */
+using Ultra = Float32MultiArray;
+
+/**
+ * @brief 8位整数数据结构
  */
 struct Int8 {
   int8_t data;
 };
 
 /**
- * @brief Head touch data structure
+ * @brief 头部触摸数据结构
  */
 using HeadTouch = Int8;
 
@@ -552,86 +547,86 @@ class NonCopyable {
 };
 
 /**
- * @brief Custom bot configuration
+ * @brief 自定义智能体配置
  */
 struct CustomBotInfo {
-  std::string name;      // Bot name
-  std::string workflow;  // Workflow id
-  std::string token;     // User authorization token
+  std::string name;      // 智能体名称
+  std::string workflow;  // 工作流id
+  std::string token;     // 用户授权token
 };
 
 /**
- * @brief Custom bot mapping table
+ * @brief 自定义智能体映射表
  */
 using CustomBotMap = std::map<std::string, CustomBotInfo>;
 
 /**
- * @brief Speech configuration parameters
+ * @brief 语音配置参数
  */
 struct SetSpeechConfig {
-  std::string speaker_id;     // Speaker id
-  std::string region;         // Speaker region
-  std::string bot_id;         // Mode id
-  bool is_front_doa;          // Whether to force front direction recognition
-  bool is_fullduplex_enable;  // Natural conversation
-  bool is_enable;             // Speech switch
-  bool is_doa_enable;         // Whether to enable wakeup direction head turning
-  float speaker_speed;        // TTS playback speed range [1,2]
-  std::string wakeup_name;    // Wakeup name
-  CustomBotMap custom_bot;    // Custom bot
+  std::string speaker_id;     // 音色id
+  std::string region;         // 音色地区
+  std::string bot_id;         // 模式id
+  bool is_front_doa;          // 是否强制正常向识别
+  bool is_fullduplex_enable;  // 自然对话
+  bool is_enable;             // 语音开关
+  bool is_doa_enable;         // 是否打开唤醒方位转头
+  float speaker_speed;        // TTS播放语速范围[1,2]
+  std::string wakeup_name;    // 唤醒名字
+  CustomBotMap custom_bot;    // 自定义智能体
 };
 
 struct SpeakerConfigSelected {
-  std::string region;      // Selected region
-  std::string speaker_id;  // Selected speaker ID
+  std::string region;      // 选中的地区
+  std::string speaker_id;  // 选中的音色ID
 };
 
 /**
- * @brief Speaker configuration structure
+ * @brief 音色配置结构体
  */
 struct SpeakerConfig {
-  std::map<std::string, std::vector<std::array<std::string, 2>>> data;  // Speaker data: region->speaker ID->speaker name
+  std::map<std::string, std::vector<std::array<std::string, 2>>> data;  // 音色数据：地区->音色ID->音色名称
   SpeakerConfigSelected selected;
-  float speaker_speed;  // Speed
+  float speaker_speed;  // 语速
 };
 
 /**
- * @brief Bot configuration info
+ * @brief 智能体配置信息
  */
 struct BotInfo {
-  std::string name;      // Work scene name
-  std::string workflow;  // Workflow ID
+  std::string name;      // 工作场景名称
+  std::string workflow;  // 工作流ID
 };
 
 struct BotConfigSelected {
-  std::string bot_id;  // Selected bot ID
+  std::string bot_id;  // 选中的智能体ID
 };
 
 /**
- * @brief Bot configuration structure
+ * @brief 智能体配置结构体
  */
 struct BotConfig {
-  std::map<std::string, BotInfo> data;               // Standard bot data: bot ID->bot info
-  std::map<std::string, CustomBotInfo> custom_data;  // Custom bot data: bot ID->custom bot info
+  std::map<std::string, BotInfo> data;               // 标准智能体数据：智能体ID->智能体信息
+  std::map<std::string, CustomBotInfo> custom_data;  // 自定义智能体数据：智能体ID->自定义智能体信息
   BotConfigSelected selected;
 };
 
 /**
- * @brief Wakeup configuration structure
+ * @brief 唤醒配置结构体
  */
 struct WakeupConfig {
-  std::string name;                         // Wakeup name
-  std::map<std::string, std::string> data;  // Wakeup word data: wakeup word->pinyin
+  std::string name;                         // 唤醒名称
+  std::map<std::string, std::string> data;  // 唤醒词数据：唤醒词->拼音
 };
 
 /**
- * @brief Dialog configuration structure
+ * @brief 对话配置结构体
  */
 struct DialogConfig {
-  bool is_front_doa;          // Whether to force front direction enhanced pickup
-  bool is_fullduplex_enable;  // Whether to enable full-duplex dialog
-  bool is_enable;             // Whether to enable speech
-  bool is_doa_enable;         // Whether to enable wakeup direction head turning
+  bool is_front_doa;          // 是否强制正前方加强拾音
+  bool is_fullduplex_enable;  // 是否打开全双工对话
+  bool is_enable;             // 是否打开语音
+  bool is_doa_enable;         // 是否打开唤醒方位转头
 };
 
 enum class TtsType {
@@ -641,14 +636,14 @@ enum class TtsType {
 };
 
 /**
- * @brief Complete speech system configuration structure
+ * @brief 语音系统完整配置结构体
  */
 struct GetSpeechConfig {
-  SpeakerConfig speaker_config;      // Speaker configuration
-  BotConfig bot_config;              // Bot configuration
-  WakeupConfig wakeup_config;        // Wakeup configuration
-  DialogConfig dialog_config;        // Dialog configuration
-  TtsType tts_type = TtsType::NONE;  // Speech model
+  SpeakerConfig speaker_config;     // 音色配置
+  BotConfig bot_config;             // 智能体配置
+  WakeupConfig wakeup_config;       // 唤醒配置
+  DialogConfig dialog_config;       // 对话配置
+  TtsType tts_type = TtsType::NONE;  // 语音模型
 };
 
 inline SetSpeechConfig ToSetSpeechConfig(const GetSpeechConfig& get_speech_config) {

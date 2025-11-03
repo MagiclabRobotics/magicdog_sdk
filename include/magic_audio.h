@@ -1,4 +1,5 @@
 #pragma once
+// 1
 #include "magic_export.h"
 #include "magic_type.h"
 
@@ -14,116 +15,106 @@ using AudioControllerPtr = std::unique_ptr<AudioController>;
 
 /**
  * @class AudioController
- * @brief A class encapsulating audio control functions, providing interfaces for audio playback, stop, volume adjustment, etc.
+ * @brief 封装音频控制功能的类，提供音频播放、停止、音量调节等接口。
  *
- * This class is typically used to control audio output in robots or smart devices, supporting text-to-speech (TTS) playback,
- * volume setting and query, and providing initialization and resource release mechanisms.
+ * 该类通常用于控制机器人或智能设备中的音频输出，支持文本转语音（TTS）播放、
+ * 音量设置与查询，并提供初始化和资源释放机制。
  */
 class MAGIC_EXPORT_API AudioController final : public NonCopyable {
-  // Message pointer type definition (smart pointer for memory management)
-  using ByteMultiArrayPtr = std::shared_ptr<ByteMultiArray>;  // Byte array data pointer
+  // 消息指针类型定义（智能指针，便于内存管理）
+  using ByteMultiArrayPtr = std::shared_ptr<ByteMultiArray>;  // 字节数组数据指针
 
-  // Callback function type definitions for various audio data
+  // 各类音频数据的回调函数类型定义
   using ByteMultiArrayCallback = std::function<void(const ByteMultiArrayPtr)>;
 
  public:
   /**
-   * @brief Constructor, initializes the audio controller object.
-   *        Can be used to construct internal state, allocate resources, etc.
+   * @brief 构造函数，初始化音频控制器对象。
+   *        可用于构造内部状态，分配资源等。
    */
   AudioController();
 
   /**
-   * @brief Destructor, releases audio controller resources.
-   *        Ensures playback is stopped and underlying resources are cleaned up.
+   * @brief 析构函数，释放音频控制器资源。
+   *        确保停止播放并清理底层资源。
    */
   ~AudioController();
 
   /**
-   * @brief Initialize the audio control module.
-   * @return Returns true on success, false on failure.
+   * @brief 初始化音频控制模块。
+   * @return 成功返回 true，失败返回 false。
    */
   bool Initialize();
 
   /**
-   * @brief Shutdown the audio controller and release resources.
-   *        Used together with Initialize to ensure safe exit.
+   * @brief 关闭音频控制器并释放资源。
+   *        与 Initialize 配套使用，确保安全退出。
    */
   void Shutdown();
 
   /**
-   * @brief Switch TTS voice model.
-   * @param tts_type TTS voice model type.
-   * @param config Speech configuration.
-   * @param timeout_ms Timeout in milliseconds.
-   * @return Operation status.
+   * @brief 切换语音模型
+   * @param tts_type 语音模型
+   * @param config 语音配置
+   * @return 操作状态
    */
-  Status SwitchTtsVoiceModel(TtsType tts_type, GetSpeechConfig& config, int timeout_ms = 5000);
+  Status SwitchTtsVoiceModel(TtsType tts_type, GetSpeechConfig& config);
 
   /**
-   * @brief Get speech configuration.
-   * @param config Speech configuration.
-   * @param timeout_ms Timeout in milliseconds.
-   * @return Operation status, returns Status::OK on success.
+   * @brief 获取语音配置
+   * @return 操作状态，成功返回 Status::OK。
    */
-  Status GetVoiceConfig(GetSpeechConfig& config, int timeout_ms = 5000);
+  Status GetVoiceConfig(GetSpeechConfig& config);
 
   /**
-   * @brief Set speech configuration.
-   * @param config Speech configuration to set.
-   * @param timeout_ms Timeout in milliseconds.
-   * @return Operation status, returns Status::OK on success.
+   * @brief 设置语音配置
+   * @param config 要设置的语音配置。
+   * @return 操作状态，成功返回 Status::OK。
    */
-  Status SetVoiceConfig(const SetSpeechConfig& config, int timeout_ms = 5000);
+  Status SetVoiceConfig(const SetSpeechConfig& config);
 
   /**
-   * @brief Play TTS command.
-   * @param cmd TTS command, including text content, speed, pitch, etc.
-   * @param timeout_ms Timeout in milliseconds.
-   * @return Operation status, returns Status::OK on success.
+   * @brief 播放语音命令（TTS）。
+   * @param cmd TTS命令，包含文本内容、语速、语调等参数。
+   * @return 操作状态，成功返回 Status::OK。
    */
-  Status Play(const TtsCommand& cmd, int timeout_ms = 5000);
+  Status Play(const TtsCommand& cmd);
 
   /**
-   * @brief Stop current audio playback.
-   * @param timeout_ms Timeout in milliseconds.
-   * @return Operation status, returns Status::OK on success.
+   * @brief 停止当前音频播放。
+   * @return 操作状态，成功返回 Status::OK。
    */
-  Status Stop(int timeout_ms = 5000);
+  Status Stop();
 
   /**
-   * @brief Set the output volume.
-   * @param volume Volume value (usually 0-100 or as defined by protocol).
-   * @param timeout_ms Timeout in milliseconds.
-   * @return Operation status, returns Status::OK on success.
+   * @brief 设置音频输出的音量。
+   * @param volume 音量值（通常范围 0-100 或协议定义的范围）。
+   * @return 操作状态，成功返回 Status::OK。
    */
-  Status SetVolume(int volume, int timeout_ms = 5000);
+  Status SetVolume(int volume);
 
   /**
-   * @brief Get the current output volume.
-   * @param[out] volume Current volume value (returned by reference).
-   * @param timeout_ms Timeout in milliseconds.
-   * @return Operation status, returns Status::OK on success.
+   * @brief 获取当前音频输出音量。
+   * @param[out] volume 当前音量值（通过引用返回）。
+   * @return 操作状态，成功返回 Status::OK。
    */
-  Status GetVolume(int& volume, int timeout_ms = 5000);
+  Status GetVolume(int& volume);
 
   /**
-   * @brief Control voice data stream.
-   * @param raw_data Whether to send raw data.
-   * @param bf_data Whether to send bf data.
-   * @param timeout_ms Timeout in milliseconds.
-   * @return Operation status.
+   * @brief 控制语音数据流
+   * @param raw_data 是否发送原始数据
+   * @param bf_data 是否发送bf数据
+   * @return 操作状态
    */
-  Status ControlVoiceStream(bool raw_data, bool bf_data, int timeout_ms = 5000);
+  Status ControlVoiceStream(bool raw_data, bool bf_data);
 
   /**
-   * @brief Subscribe to original voice data.
-   * @param callback Callback to handle received original voice data.
+   * @brief 订阅原始语音数据
+   * @param callback 接收到原始语音数据后的处理回调
    */
   void SubscribeOriginVoiceData(const ByteMultiArrayCallback callback);
 
   /**
-   * @brief Subscribe to BF voice data.
    * @brief 订阅BF语音数据
    * @param callback 接收到BF语音数据后的处理回调
    */

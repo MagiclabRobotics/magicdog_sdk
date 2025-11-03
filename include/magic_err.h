@@ -5,6 +5,7 @@
 #include <unordered_map>
 namespace magic::dog {
 
+// 确认一下狗的故障码位置
 static std::unordered_map<uint16_t, std::string> error_code_map = {
     {0x0000, "No error"},
 
@@ -47,7 +48,7 @@ static std::unordered_map<uint16_t, std::string> error_code_map = {
     {0x2204, "Navigation failed to receive ultrasonic data, error"},
     {0x2205, "Navigation failed to receive laser data, error"},
     {0x2206, "Navigation failed to receive rgbd data, errorr"},
-    {0x2207, "Navigation failed to receive multi laser scan data, error"},
+    {0x2207, "Navigation failed to receive multi lidar data, error"},
     {0x2208, "Navigation failed to receive point tof data, error"},
     {0x2209, "Navigation failed to receive plane tof data, error"},
     {0x220A, "Navigation failed to receive odom data, error"},
@@ -58,13 +59,13 @@ static std::unordered_map<uint16_t, std::string> error_code_map = {
     {0x2104, "Navigation failed to receive ultrasonic data, warning"},
     {0x2105, "Navigation failed to receive laser data, warning"},
     {0x2106, "Navigation failed to receive rgbd tof data, warning"},
-    {0x2107, "Navigation failed to receive multi laser scan data, warning"},
+    {0x2107, "Navigation failed to receive multi lidar data, warning"},
     {0x2108, "Navigation failed to receive point tof data, warning"},
     {0x2109, "Navigation failed to receive plane tof data, warning"},
     {0x210A, "Navigation failed to receive odom data, warning"},
 
     {0x4201, "slam localization error"},
-    {0x4102, "Slam failed to receive laser scan data, error"},
+    {0x4102, "Slam failed to receive lidar data, error"},
     {0x4103, "Slam failed to receive odom data, error"},
     {0x4205, "slam map error"},
 };

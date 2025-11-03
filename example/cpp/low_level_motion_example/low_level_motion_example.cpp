@@ -15,7 +15,7 @@ void signalHandler(int signum) {
   std::cout << "Interrupt signal (" << signum << ") received.\n";
 
   robot.Shutdown();
-  // Exit process
+  // 退出进程
   exit(signum);
 }
 
@@ -24,17 +24,17 @@ int main() {
   signal(SIGINT, signalHandler);
 
   std::string local_ip = "192.168.55.10";
-  // Configure local IP address for direct network connection to machine and initialize SDK
+  // 配置本机网线直连机器的IP地址，并进行SDK初始化
   if (!robot.Initialize(local_ip)) {
-    std::cerr << "Robot SDK initialization failed." << std::endl;
+    std::cerr << "robot sdk initialize failed." << std::endl;
     robot.Shutdown();
     return -1;
   }
 
-  // Connect to robot
+  // 连接机器人
   auto status = robot.Connect();
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Connect robot failed"
+    std::cerr << "connect robot failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
@@ -43,7 +43,7 @@ int main() {
 
   status = robot.SetMotionControlLevel(ControllerLevel::HighLevel);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Switch robot motion control level to HighLevel failed"
+    std::cerr << "switch robot motion control level to HighLevel failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
@@ -53,7 +53,7 @@ int main() {
   auto& high_controller = robot.GetHighLevelMotionController();
   status = high_controller.SetGait(magic::dog::GaitMode::GAIT_PASSIVE);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Switch robot motion gait failed"
+    std::cerr << "switch robot motion gait failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
@@ -68,10 +68,10 @@ int main() {
 
   sleep(2);
 
-  // Switch motion control level to low level controller, default is high level controller
+  // 切换运控控制器为底层控制器，默认是高层控制器
   status = robot.SetMotionControlLevel(ControllerLevel::LowLevel);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Switch robot motion control level failed"
+    std::cerr << "switch robot motion control level failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
@@ -85,8 +85,11 @@ int main() {
 
   sleep(2);
 
-  // Get low level controller
+  // 获取底层控制器
   auto& controller = robot.GetLowLevelMotionController();
+
+  // 设置控制指令发送周期为2ms，500HZ
+  controller.SetPeriodMs(2);
 
   current_mode = GaitMode::GAIT_NONE;
   while (current_mode != GaitMode::GAIT_LOWLEVL_SDK) {
@@ -106,7 +109,7 @@ int main() {
     }
 
     if (count++ % 1000 == 0)
-      std::cout << "Received leg state data." << std::endl;
+      std::cout << "receive leg state data." << std::endl;
   });
 
   while (!is_had_receive_leg_state) {
@@ -162,12 +165,13 @@ int main() {
 
   usleep(10000000);
 
-  // Disconnect from robot
+  // 断开与机器人的链接
   status = robot.Disconnect();
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Disconnect robot failed"
+    std::cerr << "disconnect robot failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
+    robot.Shutdown();
     return -1;
   }
 

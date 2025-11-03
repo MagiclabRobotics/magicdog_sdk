@@ -4,4 +4,4 @@
 #define SDK_VERSION_MINOR 0
 #define SDK_VERSION_PATCH 2
 
-#define SDK_VERSION_STRING "0.0.3"
+#define SDK_VERSION_STRING "0.0.2"

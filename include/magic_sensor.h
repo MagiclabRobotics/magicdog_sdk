@@ -15,196 +15,188 @@ using SensorControllerPtr = std::unique_ptr<SensorController>;
 
 /**
  * @class SensorController
- * @brief Sensor controller class, encapsulating initialization, start/stop, and data acquisition interfaces for various robot sensors.
+ * @brief 传感器控制器类，封装机器人各类传感器的初始化、开启/关闭和数据获取接口。
  *
- * Supports acquiring information from TOF, IMU, RGBD, ultrasonic, laser scan, binocular camera, fisheye camera, etc., providing a unified access method,
- * for use by upper-level controllers or state fusion modules.
+ * 支持获取tof、imu、rgbd、ultra、lidar、 双目相机、 鱼眼相机等信息，提供统一的访问方式，
+ * 用于上层控制器或状态融合模块调用。
  */
 class MAGIC_EXPORT_API SensorController final : public NonCopyable {
-  // Message pointer type definitions (smart pointers for memory management)
-  using TofPtr = std::shared_ptr<Float32MultiArray>;            // TOF data pointer
-  using UltraPtr = std::shared_ptr<Float32MultiArray>;          // Ultrasonic data pointer
-  using HeadTouchPtr = std::shared_ptr<HeadTouch>;              // Head touch data pointer
-  using LaserScanPtr = std::shared_ptr<LaserScan>;              // Laser scan data pointer
-  using ImagePtr = std::shared_ptr<Image>;                      // Image data pointer
-  using CameraInfoPtr = std::shared_ptr<CameraInfo>;            // Camera intrinsic data pointer
-  using CompressedImagePtr = std::shared_ptr<CompressedImage>;  // Compressed image data pointer
-  using ImuPtr = std::shared_ptr<Imu>;                          // IMU (Inertial Measurement Unit) message pointer
+  // 消息指针类型定义（智能指针，便于内存管理）
+  using TofPtr = std::shared_ptr<Tof>;                          // TOF 数据指针
+  using UltraPtr = std::shared_ptr<Ultra>;                      // 超声波数据指针
+  using HeadTouchPtr = std::shared_ptr<HeadTouch>;              // 头部触摸数据指针
+  using LidarPtr = std::shared_ptr<LaserScan>;                  // 激光雷达数据指针
+  using ImagePtr = std::shared_ptr<Image>;                      // 图像数据指针
+  using CameraInfoPtr = std::shared_ptr<CameraInfo>;            // 相机内参数据指针
+  using CompressedImagePtr = std::shared_ptr<CompressedImage>;  // 压缩图像数据指针
+  using ImuPtr = std::shared_ptr<Imu>;                          // IMU 惯性测量单元消息指针
 
-  // Callback function type definitions for various sensor data
+  // 各类传感器数据的回调函数类型定义
   using TofCallback = std::function<void(const TofPtr)>;
   using UltraCallback = std::function<void(const UltraPtr)>;
   using HeadTouchCallback = std::function<void(const HeadTouchPtr)>;
-  using LaserScanCallback = std::function<void(const LaserScanPtr)>;
+  using LidarCallback = std::function<void(const LidarPtr)>;
   using ImageCallback = std::function<void(const ImagePtr)>;
   using CameraInfoCallback = std::function<void(const CameraInfoPtr)>;
   using CompressedImageCallback = std::function<void(const CompressedImagePtr)>;
   using ImuCallback = std::function<void(const ImuPtr)>;
 
  public:
-  /// Constructor: Create SensorController instance and initialize internal state
+  /// 构造函数：创建 SensorController 实例，初始化内部状态
   SensorController();
 
-  /// Destructor: Release resources and close all sensors
+  /// 析构函数：释放资源，关闭所有传感器
   virtual ~SensorController();
 
   /**
-   * @brief Initialize the sensor controller, including resource allocation, driver loading, etc.
-   * @return Returns true if initialization is successful, otherwise false.
+   * @brief 初始化传感器控制器，包括资源申请、驱动加载等。
+   * @return 初始化成功返回 true，否则返回 false。
    */
   bool Initialize();
 
   /**
-   * @brief Close all sensor connections and release resources.
+   * @brief 关闭所有传感器连接并释放资源。
    */
   void Shutdown();
 
-  // === Channel switch ===
+  // === 话题转换开关 ===
 
   /**
-   * @brief Open channel switch
-   * @param timeout_ms Timeout in milliseconds
-   * @return Operation status
+   * @brief 打开话题转换开关
+   * @return 操作状态
    */
-  Status OpenChannelSwith(int timeout_ms = 5000);
+  Status OpenChannelSwith();
 
   /**
-   * @brief Close channel switch
-   * @param timeout_ms Timeout in milliseconds
-   * @return Operation status
+   * @brief 关闭话题转换开关
+   * @return 操作状态
    */
-  Status CloseChannelSwith(int timeout_ms = 5000);
+  Status CloseChannelSwith();
 
-  // === Laser Scan control ===
+  // === Lidar控制 ===
 
   /**
-   * @brief Open Laser Scan.
-   * @param timeout_ms Timeout in milliseconds
-   * @return Operation status.
+   * @brief 打开 Lidar。
+   * @return 操作状态。
    */
-  Status OpenLaserScan(int timeout_ms = 5000);
+  Status OpenLidar();
 
   /**
-   * @brief Close Laser Scan.
-   * @param timeout_ms Timeout in milliseconds
-   * @return Operation status.
+   * @brief 关闭 Lidar。
+   * @return 操作状态。
    */
-  Status CloseLaserScan(int timeout_ms = 5000);
+  Status CloseLidar();
 
-  // === RGBD camera control ===
+  // === RGBD 相机控制 ===
 
   /**
-   * @brief Open RGBD camera
-   * @param timeout_ms Timeout in milliseconds
-   * @return Operation status.
+   * @brief 打开 RGBD 相机
+   * @return 操作状态。
    */
-  Status OpenRgbdCamera(int timeout_ms = 5000);
+  Status OpenRgbdCamera();
 
   /**
-   * @brief Close RGBD camera.
-   * @param timeout_ms Timeout in milliseconds
-   * @return Operation status.
+   * @brief 关闭 RGBD 相机。
+   * @return 操作状态。
    */
-  Status CloseRgbdCamera(int timeout_ms = 5000);
+  Status CloseRgbdCamera();
 
-  // === Binocular camera control ===
+  // === 双目相机控制 ===
 
   /**
-   * @brief Open binocular camera.
-   * @param timeout_ms Timeout in milliseconds
-   * @return Operation status.
+   * @brief 打开双目相机。
+   * @return 操作状态。
    */
-  Status OpenBinocularCamera(int timeout_ms = 5000);
+  Status OpenBinocularCamera();
 
   /**
-   * @brief Close binocular camera.
-   * @param timeout_ms Timeout in milliseconds
-   * @return Operation status.
+   * @brief 关闭双目相机。
+   * @return 操作状态。
    */
-  Status CloseBinocularCamera(int timeout_ms = 5000);
+  Status CloseBinocularCamera();
 
-  // Subscription interfaces for various sensor data
+  // 订阅各类传感器数据的函数接口
 
   /**
-   * @brief Subscribe to TOF data
-   * @param callback Callback to process received TOF data
+   * @brief 订阅TOF数据
+   * @param callback 接收到TOF数据后的处理回调
    */
   void SubscribeTof(const TofCallback callback);
 
   /**
-   * @brief Subscribe to ultrasonic data
-   * @param callback Callback to process received ultrasonic data
+   * @brief 订阅超声波数据
+   * @param callback 接收到超声波数据后的处理回调
    */
   void SubscribeUltra(const UltraCallback callback);
 
   /**
-   * @brief Subscribe to head touch data
-   * @param callback Callback to process received head touch data
+   * @brief 订阅头部触摸数据
+   * @param callback 接收到头部触摸数据后的处理回调
    */
   void SubscribeHeadTouch(const HeadTouchCallback callback);
 
   /**
-   * @brief Subscribe to laser scan data
-   * @param callback Callback to process received laser scan data
+   * @brief 订阅激光雷达数据
+   * @param callback 接收到激光雷达数据后的处理回调
    */
-  void SubscribeLaserScan(const LaserScanCallback callback);
+  void SubscribeLidar(const LidarCallback callback);
 
   /**
-   * @brief Subscribe to RGBD depth camera intrinsic data
-   * @param callback Callback to process received RGBD depth camera intrinsic data
+   * @brief 订阅RGBD深度相机内参数据
+   * @param callback 接收到RGBD深度相机内参数据后的处理回调
    */
   void SubscribeRgbDepthCameraInfo(const CameraInfoCallback callback);
 
   /**
-   * @brief Subscribe to RGBD depth image data
-   * @param callback Callback to process received RGBD depth image data
+   * @brief 订阅RGBD深度图像数据
+   * @param callback 接收到RGBD深度图像数据后的处理回调
    */
   void SubscribeRgbdDepthImage(const ImageCallback callback);
 
   /**
-   * @brief Subscribe to RGBD color camera intrinsic data
-   * @param callback Callback to process received RGBD color camera intrinsic data
+   * @brief 订阅RGBD彩色图像内参数据
+   * @param callback 接收到RGBD彩色图像内参数据后的处理回调
    */
   void SubscribeRgbdColorCameraInfo(const CameraInfoCallback callback);
 
   /**
-   * @brief Subscribe to RGBD color image data
-   * @param callback Callback to process received RGBD color image data
+   * @brief 订阅RGBD彩色图像数据
+   * @param callback 接收到RGBD彩色图像数据后的处理回调
    */
   void SubscribeRgbdColorImage(const ImageCallback callback);
 
   /**
-   * @brief Subscribe to IMU data
-   * @param callback Callback to process received IMU data
+   * @brief 订阅IMU数据
+   * @param callback 接收到IMU数据后的处理回调
    */
   void SubscribeImu(const ImuCallback callback);
 
   /**
-   * @brief Subscribe to left high-quality binocular image data
-   * @param callback Callback to process received left high-quality binocular image data
+   * @brief 订阅左侧高质量双目数据
+   * @param callback 接收到左侧高质量双目数据后的处理回调
    */
   void SubscribeLeftBinocularHighImg(const CompressedImageCallback callback);
 
   /**
-   * @brief Subscribe to left low-quality binocular image data
-   * @param callback Callback to process received left low-quality binocular image data
+   * @brief 订阅左侧低质量双目数据
+   * @param callback 接收到左侧低质量双目数据后的处理回调
    */
   void SubscribeLeftBinocularLowImg(const CompressedImageCallback callback);
 
   /**
-   * @brief Subscribe to right low-quality binocular image data
-   * @param callback Callback to process received right low-quality binocular image data
+   * @brief 订阅右侧低质量双目数据
+   * @param callback 接收到右侧低质量双目数据后的处理回调
    */
   void SubscribeRightBinocularLowImg(const CompressedImageCallback callback);
 
   /**
-   * @brief Subscribe to depth image
-   * @param callback Callback to process received depth image
+   * @brief 订阅深度图像
+   * @param callback 接收到深度图像后的处理回调
    */
   void SubscribeDepthImage(const ImageCallback callback);
 
  private:
-  std::atomic_bool is_shutdown_{true};  // Indicates whether initialized
+  std::atomic_bool is_shutdown_{true};  // 标记是否已初始化
 };
 
 }  // namespace magic::dog::sensor

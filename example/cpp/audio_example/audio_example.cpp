@@ -13,128 +13,116 @@ void signalHandler(int signum) {
   std::cout << "Interrupt signal (" << signum << ") received.\n";
 
   robot.Shutdown();
-  // Exit process
+  // 退出进程
   exit(signum);
 }
 
 int main() {
-  // Bind SIGINT (Ctrl+C)
+  // 绑定 SIGINT（Ctrl+C）
   signal(SIGINT, signalHandler);
 
   std::string local_ip = "192.168.55.10";
-  // Configure local IP address for direct network connection to machine and initialize SDK
+  // 配置本机网线直连机器的IP地址，并进行SDK初始化
   if (!robot.Initialize(local_ip)) {
-    std::cerr << "Robot SDK initialization failed." << std::endl;
+    std::cerr << "robot sdk initialize failed." << std::endl;
     robot.Shutdown();
     return -1;
   }
 
-  // Connect to robot
+  // 设置rpc超时时间为5s
+  robot.SetTimeout(5000);
+
+  // 连接机器人
   auto status = robot.Connect();
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Connect robot failed"
+    std::cerr << "connect robot failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
     return -1;
   }
 
-  // Get audio controller
+  // 获取音频控制器
   auto& controller = robot.GetAudioController();
 
-  // Get robot's current volume
+  // 获取机器人当前音量
   int get_volume = 0;
   status = controller.GetVolume(get_volume);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Get volume failed"
+    std::cerr << "get volume failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
     return -1;
   }
 
-  std::cout << "Get volume success, volume: " << std::to_string(get_volume) << std::endl;
+  std::cout << "get volume success, volume: " << std::to_string(get_volume) << std::endl;
 
-  // Set robot volume
-  status = controller.SetVolume(70);
+  // 设置机器人音量
+  status = controller.SetVolume(7);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Set volume failed"
+    std::cerr << "set volume failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
     return -1;
   }
 
-  // Verify if the set volume is correct
+  // 校验设置的音量是否正确
   status = controller.GetVolume(get_volume);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Get volume failed"
+    std::cerr << "get volume failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
     return -1;
   }
 
-  std::cout << "Get volume success, volume: " << std::to_string(get_volume) << std::endl;
+  std::cout << "get volume success, volume: " << std::to_string(get_volume) << std::endl;
 
-  // Play voice
+  // 播放语音
   TtsCommand tts;
   tts.id = "100000000001";
-  tts.content = "How's the weather today!";
+  tts.content = "今天天气怎么样！";
   tts.priority = TtsPriority::HIGH;
   tts.mode = TtsMode::CLEARTOP;
   status = controller.Play(tts);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Play TTS failed"
+    std::cerr << "play tts failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
     return -1;
   }
 
-  // Wait 2s
+  // 等待2s
   usleep(5000000);
 
-  // Stop voice playback
+  // 停止播放语音
   status = controller.Stop();
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Stop TTS failed"
+    std::cerr << "stop tts failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
     return -1;
   }
 
-  // Wait 5s
+  // 等待5s
   usleep(2000000);
 
-  std::cout << "Play music" << std::endl;
-  std::string music_file_path = "local_music:/opt/eame/dreame_manager/share/dreame_manager/configures/music_files/dance_xsgy.mp3";
-  tts.content = music_file_path;
-  status = controller.Play(tts);
-  if (status.code != ErrorCode::OK) {
-    std::cerr << "Play music failed"
-              << ", code: " << status.code
-              << ", message: " << status.message << std::endl;
-    robot.Shutdown();
-    return -1;
-  }
-
-  // Wait 5s
-  usleep(5000000);
-
-  // Get voice configuration
+  // 获取语音配置
   GetSpeechConfig get_speech_config;
   status = controller.GetVoiceConfig(get_speech_config);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Get voice config failed"
+    std::cerr << "get voice config failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
     return -1;
   }
 
-  std::cout << "Get voice config success, speaker_id: " << get_speech_config.speaker_config.selected.speaker_id
+  std::cout << "get voice config success, speaker_id: " << get_speech_config.speaker_config.selected.speaker_id
             << ", region: " << get_speech_config.speaker_config.selected.region
             << ", bot_id: " << get_speech_config.bot_config.selected.bot_id
             << ", is_front_doa: " << get_speech_config.dialog_config.is_front_doa
@@ -145,31 +133,49 @@ int main() {
             << ", wakeup_name: " << get_speech_config.wakeup_config.name
             << ", custom_bot: " << get_speech_config.bot_config.custom_data.size() << std::endl;
   for (const auto& [key, value] : get_speech_config.bot_config.custom_data) {
-    std::cout << "Custom bot data: " << key << ", " << value.name << std::endl;
+    std::cout << "custom_bot_data: " << key << ", " << value.name << std::endl;
   }
 
-  // Subscribe to raw voice data
+  // 设置语音配置
+  SetSpeechConfig set_speech_config = ToSetSpeechConfig(get_speech_config);
+  set_speech_config.wakeup_name = "小麦";
+  set_speech_config.is_doa_enable = false;
+  set_speech_config.is_front_doa = false;
+  set_speech_config.is_fullduplex_enable = false;
+  set_speech_config.is_enable = true;
+
+  status = controller.SetVoiceConfig(set_speech_config);
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "set voice config failed"
+              << ", code: " << status.code
+              << ", message: " << status.message << std::endl;
+    robot.Shutdown();
+    return -1;
+  }
+
+  // 订阅原始语音数据
   controller.SubscribeOriginVoiceData([](const std::shared_ptr<ByteMultiArray> data) {
-    std::cout << "Received raw voice data, size: " << data->data.size() << std::endl;
+    std::cout << "receive origin voice data, size: " << data->data.size() << std::endl;
   });
-  // Subscribe to BF voice data
+  // 订阅BF语音数据
   controller.SubscribeBfVoiceData([](const std::shared_ptr<ByteMultiArray> data) {
-    std::cout << "Received BF voice data, size: " << data->data.size() << std::endl;
+    std::cout << "receive bf voice data, size: " << data->data.size() << std::endl;
   });
 
-  // Control voice data stream
+  // 控制语音数据流
   status = controller.ControlVoiceStream(true, true);
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Control voice stream failed"
+    std::cerr << "control voice stream failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
   }
 
-  // Wait 10s
+  // 等待10s
   usleep(10000000);
 
-  std::cout << "Close voice stream" << std::endl;
+  std::cout << "close voice stream" << std::endl;
 
+  // 停止订阅语音数据
   // status = sensor.ControlVoiceStream(false, false);
   // if (status.code != ErrorCode::OK) {
   //   std::cerr << "control voice stream failed"
@@ -177,14 +183,15 @@ int main() {
   //             << ", message: " << status.message << std::endl;
   // }
 
+  // // 等待10s
   // usleep(10000000);
 
-  std::cout << "Disconnect robot" << std::endl;
+  std::cout << "disconnect robot" << std::endl;
 
-  // Disconnect from robot
+  // 断开与机器人的链接
   status = robot.Disconnect();
   if (status.code != ErrorCode::OK) {
-    std::cerr << "Disconnect robot failed"
+    std::cerr << "disconnect robot failed"
               << ", code: " << status.code
               << ", message: " << status.message << std::endl;
     robot.Shutdown();
