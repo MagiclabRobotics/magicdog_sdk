@@ -25,6 +25,19 @@ net.core.wmem_max=20971520
 net.core.wmem_default=20971520  
 ```
 
+#### Network Environment
+
+Connect the user's PC and robot switch to a unified network. It is recommended that new users connect their PC to the robot switch using an Ethernet cable and set the network card communicating with the robot to the 192.168.55.X network segment, preferably 192.168.55.10. Experienced users can configure the network environment themselves.
+
+Assuming the SDK development PC is connected to the robot through network interface `eno1`, the following configuration is needed for SDK to communicate with the robot's underlying system:
+
+```bash
+ sudo ifconfig eno1 multicast
+ sudo route add -net 224.0.0.0 netmask 240.0.0.0 dev eno1
+```
+
+> For more user guide, please go to [Qucik Start](https://support.magiclab.top/docs/dog/quick_start_reference)
+
 ### 2. Compiler & Toolchain
 
 - GCC ≥ 11.4 (for Linux)
