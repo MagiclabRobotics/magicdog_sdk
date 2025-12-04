@@ -5,6 +5,17 @@ All significant changes will be documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.2.1] - 2025-12-04
+
+**Corresponding Core Firmware Version: >= MagicDog 20251129**
+
+### Added
+- Added expression control interface.
+- Added streaming ASR interface for voice interaction.
+
+### Changed
+- Optimize the issues present in the example.
+
 ## [v1.2.0] - 2025-11-03
 
 **Corresponding Core Firmware Version: >= MagicDog 20251031**
