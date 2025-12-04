@@ -114,6 +114,8 @@ def main():
 
     command = magicdog.LegJointCommand()
     cnt = 0
+    interval = 0.002 # 2ms控制周期
+    next_t = time.perf_counter() + interval
     while True:
         if cnt < 1000:
             t = 1.0 * cnt / 1000.0
@@ -138,7 +140,11 @@ def main():
             command.cmd[i].kd = 1.2
 
         low_controller.publish_leg_command(command)
-        time.sleep(0.002)
+        # 等待到下一个执行时间点
+        next_t += interval
+        sleep_time = next_t - time.perf_counter()
+        if sleep_time > 0:
+            time.sleep(sleep_time)
         cnt += 1
 
     robot.disconnect()

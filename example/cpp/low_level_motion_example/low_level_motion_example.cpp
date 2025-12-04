@@ -144,6 +144,9 @@ int main() {
     
     std::cout << "Starting joint control loop..." << std::endl;
     
+    // 计算第一个周期的时间点
+    auto interval = std::chrono::milliseconds(2);
+    auto next_cycle = std::chrono::steady_clock::now() + interval;
     while (true) {
         double t;
         
@@ -176,7 +179,10 @@ int main() {
         }
         
         low_controller.PublishLegCommand(command);
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        // 精确休眠到下一个周期
+        std::this_thread::sleep_until(next_cycle);
+        // 更新下一个周期的时间点
+        next_cycle += interval;
         cnt++;
     }
     

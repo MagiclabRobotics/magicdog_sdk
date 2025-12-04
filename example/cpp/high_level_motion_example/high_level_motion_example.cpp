@@ -10,6 +10,7 @@
 #include <iostream>
 #include <memory>
 #include <thread>
+#include <math.h>
 
 using namespace magic::dog;
 
@@ -42,6 +43,10 @@ void print_help() {
   std::cout << "  t        Turn left" << std::endl;
   std::cout << "  g        Turn right" << std::endl;
   std::cout << "  x        Stop movement" << std::endl;
+  std::cout << "" << std::endl;
+  std::cout << "Head Position Functions:" << std::endl;
+  std::cout << "  4        Function 4: Get head position" << std::endl;
+  std::cout << "  5        Function 5: Set head position" << std::endl;
   std::cout << "" << std::endl;
   std::cout << "  ?        Function ?: Print help" << std::endl;
   std::cout << "  ESC      Exit program" << std::endl;
@@ -169,6 +174,39 @@ void send_joystick_command(float left_x, float left_y, float right_x, float righ
   }
 }
 
+void get_current_head_position() {
+  auto& high_controller = robot->GetHighLevelMotionController();
+
+  EulerAngles euler_angles;
+  auto status = high_controller.GetHeadPosition(euler_angles);
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "get current head position failed, code: " << status.code
+              << ", message: " << status.message << std::endl;
+    return;
+  }
+
+  std::cout << "Head Position Roll Angle: " << euler_angles.roll << std::endl;
+  std::cout << "Head Position Pitch Angle: " << euler_angles.pitch << std::endl;
+  std::cout << "Head Position Yaw Angle: " << euler_angles.yaw << std::endl;
+}
+
+void set_head_position(const EulerAngles& euler_angles) {
+  auto& high_controller = robot->GetHighLevelMotionController();
+
+  auto status = high_controller.SetHeadPosition(euler_angles);
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "set head position failed, code: " << status.code
+              << ", message: " << status.message << std::endl;
+    return;
+  }
+  std::cout << "set head position success" << std::endl;
+}
+
+// 角度转弧度函数
+constexpr double deg2rad(double deg) {
+    return deg * M_PI / 180.0;
+}
+
 int main(int argc, char* argv[]) {
   print_help();
 
@@ -250,6 +288,28 @@ int main(int argc, char* argv[]) {
         break;
       case 'x':
         send_joystick_command(0.0, 0.0, 0.0, 0.0);
+        break;
+      case '4':
+        get_current_head_position();
+        break;
+      case '5':{
+        EulerAngles angles;
+        double roll_deg, pitch_deg, yaw_deg;
+        std::cout << "请输入三个角度（roll pitch yaw，以空格分隔，-60度到60度）: ";
+        std::cin >> roll_deg >> pitch_deg >> yaw_deg;
+        // 转换为弧度
+        angles.roll = deg2rad(roll_deg);
+        angles.pitch = deg2rad(pitch_deg);
+        angles.yaw = deg2rad(yaw_deg);
+        // 输出结果
+        std::cout << "\n转换结果：" << std::endl;
+        std::cout << "Roll:  " << roll_deg << "° = " << angles.roll << " rad" << std::endl;
+        std::cout << "Pitch: " << pitch_deg << "° = " << angles.pitch << " rad" << std::endl;
+        std::cout << "Yaw:   " << yaw_deg << "° = " << angles.yaw << " rad" << std::endl;
+
+        set_head_position(angles);
+        std::cin.ignore();
+      } 
         break;
       case '?':
         print_help();

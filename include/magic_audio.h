@@ -22,9 +22,10 @@ using AudioControllerPtr = std::unique_ptr<AudioController>;
 class MAGIC_EXPORT_API AudioController final : public NonCopyable {
   // Message pointer type definition (smart pointer for memory management)
   using ByteMultiArrayPtr = std::shared_ptr<ByteMultiArray>;  // Byte array data pointer
-
+  using SpeechASRStreamPtr = std::shared_ptr<SpeechASRStream>;
   // Callback function type definitions for various audio data
   using ByteMultiArrayCallback = std::function<void(const ByteMultiArrayPtr)>;
+  using SpeechASRStreamCallback = std::function<void(const SpeechASRStreamPtr)>;
 
  public:
   /**
@@ -136,6 +137,32 @@ class MAGIC_EXPORT_API AudioController final : public NonCopyable {
    * @brief Unsubscribe from BF voice data.
    */
   void UnsubscribeBfVoiceData();
+
+  /**
+   * @brief Control speech io data stream(asr and tts).
+   * @param enable_data Enable data stream.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
+   */
+  Status ControlSpeechIO(bool enable_data, int timeout_ms = 5000);
+
+  /**
+   * @brief Subscribe to speech asr stream.
+   * @param callback Callback to handle received speech asr stream.
+   */
+  void SubscribeSpeechASRStream(const SpeechASRStreamCallback callback);
+
+  /**
+   * @brief Unsubscribe from speech asr stream.
+   */
+  void UnsubscribeSpeechASRStream();
+
+  /**
+   * @brief Publish speech tts stream.
+   * @param data Speech TTS stream data.
+   * @return Operation status.
+   */
+  Status PublishSpeechTTSStream(const SpeechTTSStream& data);
 
  private:
   std::atomic_bool is_shutdown_{true};  // Flag indicating whether initialized

@@ -155,6 +155,22 @@ class MAGIC_EXPORT_API HighLevelMotionController final : public MotionController
    * @return Operation status.
    */
   Status DisableHeadMotor(int timeout_ms = 5000);
+
+  /**
+   * @brief Get current head position.
+   * @param euler_angles Head position in Euler angles.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
+   */
+  Status GetHeadPosition(EulerAngles& euler_angles, int timeout_ms = 5000);
+
+  /**
+   * @brief Set the head position.
+   * @param euler_angles Head position in Euler angles.
+   * @param timeout_ms Timeout in milliseconds.
+   * @return Operation status.
+   */
+  Status SetHeadPosition(const EulerAngles& euler_angles, int timeout_ms = 5000);
 };
 
 /**

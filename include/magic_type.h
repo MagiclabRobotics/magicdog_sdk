@@ -651,6 +651,43 @@ struct GetSpeechConfig {
   TtsType tts_type = TtsType::NONE;  // Speech model
 };
 
+/**
+ * @brief Robot ASR output(/magic/speech/asr)
+ */
+struct SpeechASRStream {
+  std::string id;    // request id
+  std::string type;  // request/cancel
+  std::string text;  // asr output
+};
+
+/**
+ * @brief Robot TTS input(/magic/speech/tts)
+ */
+struct SpeechTTSStream {
+  std::string id;    // same as request id
+  std::string type;  // begin/var/end
+  std::string text;  // tts input
+  bool end_session;  // end session/close asr
+};
+
+/**
+ * @brief Robot face expression
+ */
+struct FaceExpression {
+  int32_t id;
+  std::string name;
+  std::string description;
+};
+
+/**
+ * @brief Euler angles structure
+ */
+struct EulerAngles {
+  double roll;
+  double pitch;
+  double yaw;
+};
+
 /************************************************************
  *                     Slam and Navigation                  *
  ************************************************************/

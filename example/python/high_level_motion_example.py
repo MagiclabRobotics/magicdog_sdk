@@ -9,6 +9,7 @@ import termios
 import os
 import logging
 from typing import Optional
+import math
 import magicdog_python as magicdog
 
 logging.basicConfig(
@@ -121,6 +122,10 @@ def print_help():
     logging.info("  g        Function g: Turn right")
     logging.info("  x        Function x: Stop movement")
     logging.info("")
+    logging.info("Head Position Functions:")
+    logging.info("  4        Function 4: Get head position")
+    logging.info("  5        Function 5: Set head position")
+    logging.info("")
     logging.info("  ?        Function ?: Print help")
     logging.info("  ESC      Exit program")
 
@@ -137,6 +142,37 @@ def send_joystick_command(high_controller, left_x, left_y, right_x, right_y):
     status = high_controller.send_joystick_command(joy_command)
     if status.code != magicdog.ErrorCode.OK:
         logging.error(f"Failed to send joystick command: {status.message}")
+
+
+def get_current_head_position(high_controller):
+    status, euler_angles = high_controller.get_current_head_position()
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error(
+            "Failed to get current head position, code: %s, message: %s",
+            status.code,
+            status.message,
+        )
+        return
+
+    logging.info("Head Position Roll Angle: %f", euler_angles.roll)
+    logging.info("  Pitch Angle: %f", euler_angles.pitch)
+    logging.info("  Yaw Angle: %f", euler_angles.yaw)
+
+
+def set_head_position(high_controller, euler_angles):
+    status = high_controller.set_head_position(euler_angles)
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error(
+            "Failed to set head position, code: %s, message: %s",
+            status.code,
+            status.message,
+        )
+        return
+
+
+def deg2rad(deg):
+    """角度转弧度"""
+    return deg * math.pi / 180.0
 
 
 def signal_handler(signum, frame):
@@ -266,6 +302,49 @@ def main():
             right_x = 0.0
             right_y = 0.0
             send_joystick_command(high_controller, left_x, left_y, right_x, right_y)
+        # 3. Head Position Functions
+        # 3.1 Get current head position
+        elif key == "4":
+            get_current_head_position(high_controller)
+        # 3.2 Set head position
+        elif key == "5":
+            # 处理头部位置设置命令
+            try:
+                # 获取用户输入
+                user_input = input(
+                    "请输入三个角度（roll pitch yaw，以空格分隔，-60度到60度）: "
+                )
+                values = user_input.split()
+                if len(values) != 3:
+                    logging.error("错误：需要输入三个数字")
+                    return
+                # 转换为浮点数
+                roll_deg = float(values[0])
+                pitch_deg = float(values[1])
+                yaw_deg = float(values[2])
+                # 验证角度范围
+                if (
+                    not (-60 <= roll_deg <= 60)
+                    or not (-60 <= pitch_deg <= 60)
+                    or not (-60 <= yaw_deg <= 60)
+                ):
+                    logging.error("警告：角度应在 -60 到 60 度范围内")
+                # 转换为弧度
+                euler_angles = magicdog.EulerAngles()
+                euler_angles.roll = deg2rad(roll_deg)
+                euler_angles.pitch = deg2rad(pitch_deg)
+                euler_angles.yaw = deg2rad(yaw_deg)
+                # 输出结果
+                logging.info("\n转换结果：")
+                logging.info(f"Roll:  {roll_deg}° = {euler_angles.roll:.6f} rad")
+                logging.info(f"Pitch: {pitch_deg}° = {euler_angles.pitch:.6f} rad")
+                logging.info(f"Yaw:   {yaw_deg}° = {euler_angles.yaw:.6f} rad")
+                # 设置头部位置
+                set_head_position(high_controller, euler_angles)
+            except ValueError:
+                logging.error("错误：请输入有效的数字")
+            except Exception as e:
+                logging.error(f"发生错误：{e}")
         # Help
         elif key.upper() == "?":
             print_help()

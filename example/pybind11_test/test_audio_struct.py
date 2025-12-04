@@ -290,6 +290,24 @@ print(
 print(f"  - 唤醒配置: {len(wakeup_config.data)} 个唤醒词")
 print(f"  - 对话配置: 语音{'启用' if dialog_config.is_enable else '禁用'}")
 
+print("\n=== 测试ASR数据结构 ===")
+speech_asr_stream = magicdog.SpeechASRStream()
+speech_asr_stream.id = "123456789"
+speech_asr_stream.type = "request"
+speech_asr_stream.text = "ASR的输出数据"
+print(
+    f"ASR数据结构: ID='{speech_asr_stream.id}', 类型='{speech_asr_stream.type}', 文本='{speech_asr_stream.text}'"
+)
+print("\n=== 测试TTS数据结构 ===")
+speech_tts_stream = magicdog.SpeechTTSStream()
+speech_tts_stream.id = "123456789"
+speech_tts_stream.type = "var"
+speech_tts_stream.text = "TTS的输入数据"
+speech_tts_stream.end_session = False
+print(
+    f"TTS数据结构: ID='{speech_tts_stream.id}', 类型='{speech_tts_stream.type}', 文本='{speech_tts_stream.text}', 是否结束会话='{speech_tts_stream.end_session}'"
+)
+
 print("\n=== 测试设置值读取和验证 ===")
 
 # 验证音色配置设置值
@@ -381,6 +399,24 @@ print(
 )
 print(
     f"  读取值 - 名称: '{custom_bot_info.name}', 工作流: '{custom_bot_info.workflow}', 令牌: '{custom_bot_info.token}'"
+)
+
+# 验证ASR数据结构
+print("验证ASR数据结构:")
+print(
+    f"  设置值 - ID='{speech_asr_stream.id}', 类型='{speech_asr_stream.type}', 文本='{speech_asr_stream.text}'"
+)
+print(
+    f"  读取值 - ID='{speech_asr_stream.id}', 类型='{speech_asr_stream.type}', 文本='{speech_asr_stream.text}'"
+)
+
+# 验证TTS数据结构
+print("验证TTS数据结构:")
+print(
+    f"  设置值 - ID='{speech_tts_stream.id}', 类型='{speech_tts_stream.type}', 文本='{speech_tts_stream.text}', 是否结束会话='{speech_tts_stream.end_session}'"
+)
+print(
+    f"  读取值 - ID='{speech_tts_stream.id}', 类型='{speech_tts_stream.type}', 文本='{speech_tts_stream.text}', 是否结束会话='{speech_tts_stream.end_session}'"
 )
 
 # 执行一致性检查
@@ -545,6 +581,65 @@ if custom_bot_info.token != "cs_token_2024_001":
     all_checks_passed = False
 else:
     print("✅ 自定义机器人令牌一致")
+
+# 检查ASR数据结构一致性
+if speech_asr_stream.id != "123456789":
+    print(
+        f"❌ ASR ID不一致: 期望 '123456789', 实际 '{speech_asr_stream.id}'"
+    )
+    all_checks_passed = False
+else:
+    print("✅ ASR ID一致")
+
+if speech_asr_stream.type != "request":
+    print(
+        f"❌ ASR类型不一致: 期望 'request', 实际 '{speech_asr_stream.type}'"
+    )
+    all_checks_passed = False
+else:
+    print("✅ ASR类型一致")
+
+if speech_asr_stream.text != "ASR的输出数据":
+    print(
+        f"❌ ASR文本不一致: 期望 'ASR的输出数据', 实际 '{speech_asr_stream.text}'"
+    )
+    all_checks_passed = False
+else:
+    print("✅ ASR文本一致")
+
+# 检查TTS数据结构一致性
+if speech_tts_stream.id != "123456789":
+    print(
+        f"❌ TTS ID不一致: 期望 '123456789', 实际 '{speech_tts_stream.id}'"
+    )
+    all_checks_passed = False
+else:
+    print("✅ TTS ID一致")
+
+if speech_tts_stream.type != "var":
+    print(
+        f"❌ TTS类型不一致: 期望 'var', 实际 '{speech_tts_stream.type}'"
+    )
+    all_checks_passed = False
+else:
+    print("✅ TTS类型一致")
+
+if speech_tts_stream.text != "TTS的输入数据":
+    print(
+        f"❌ TTS文本不一致: 期望 'TTS的输入数据', 实际 '{speech_tts_stream.text}'"
+    )
+    all_checks_passed = False
+else:
+    print("✅ TTS文本一致")
+
+if speech_tts_stream.end_session != False:
+    print(
+        f"❌ TTS是否结束会话不一致: 期望 'False', 实际 '{speech_tts_stream.end_session}'"
+    )
+    all_checks_passed = False
+else:
+    print("✅ TTS是否结束会话一致")
+
 
 # 输出最终结果
 print(f"\n=== 一致性检查结果 ===")

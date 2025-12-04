@@ -10,6 +10,7 @@
 #include "magic_type.h"
 
 #include "magic_audio.h"
+#include "magic_display.h"
 #include "magic_motion.h"
 #include "magic_sensor.h"
 #include "magic_slam_navigation.h"
@@ -21,6 +22,7 @@ using namespace sensor;
 using namespace audio;
 using namespace monitor;
 using namespace slam;
+using namespace display;
 
 /**
  * @class MagicRobot
@@ -126,6 +128,12 @@ class MAGIC_EXPORT_API MagicRobot final : public NonCopyable {
    * @return Reference type, used to access slam data such as map, position, etc.
    */
   SlamNavController& GetSlamNavController();
+
+  /**
+   * @brief Get the display controller object.
+   * @return Reference type, can be used for display query, set, etc.
+   */
+  DisplayController& GetDisplayController();
 
   // === Channel switch ===
   /**

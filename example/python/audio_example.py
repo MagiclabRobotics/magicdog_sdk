@@ -47,6 +47,13 @@ def print_help():
     logging.info("  8        Function 8: Subscribe to audio stream")
     logging.info("  9        Function 9: Unsubscribe from audio stream")
     logging.info("")
+    logging.info("Speech IO Functions:")
+    logging.info("  d        Function d: Open speech io")
+    logging.info("  e        Function e: Close speech io")
+    logging.info("  f        Function f: Subscribe to speech asr")
+    logging.info("  g        Function g: Unsubscribe from speech asr")
+    logging.info("  h        Function h: Publish speech tts")
+    logging.info("")
     logging.info("  ?        Function ?: Print help")
     logging.info("  ESC      Exit program")
 
@@ -192,6 +199,78 @@ def get_voice_config(audio_controller):
     )
 
 
+def open_speech_io(audio_controller):
+    """Open speech IO"""
+    status = audio_controller.control_speech_io(True)
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error(
+            f"open speech io failed, code: {status.code}, message: {status.message}"
+        )
+        return
+    logging.info("open speech io success")
+
+
+def close_speech_io(audio_controller):
+    """Close speech IO"""
+    status = audio_controller.control_speech_io(False)
+    if status.code != magicdog.ErrorCode.OK:
+        logging.error(
+            f"close speech io failed, code: {status.code}, message: {status.message}"
+        )
+        return
+    logging.info("close speech io success")
+
+
+def subscribe_speech_asr(audio_controller):
+    """Subscribe to speech ASR"""
+
+    def asr_callback(data):
+        logging.info(
+            f"Received speech asr, id: {data.id}, type: {data.type}, text: {data.text}"
+        )
+        sys.stdout.write("\r")
+        sys.stdout.flush()
+
+    audio_controller.subscribe_speech_asr(asr_callback)
+    logging.info("Subscribed to speech asr")
+
+
+def unsubscribe_speech_asr(audio_controller):
+    """Unsubscribe from speech ASR"""
+    audio_controller.unsubscribe_speech_asr()
+    logging.info("Unsubscribed from speech ASR")
+
+
+def get_speech_tts_input() -> magicdog.SpeechTTSStream:
+    """从用户输入获取 TTS 流数据"""
+    print("=== Speech TTS Stream Input ===")
+
+    # 输入 ID
+    stream_id = input("Enter request ID: ").strip()
+
+    # 输入 Type 并验证
+    while True:
+        stream_type = input("Enter type (begin/var/end): ").strip().lower()
+        if stream_type in ["begin", "var", "end"]:
+            break
+        print("Invalid type! Please enter 'begin', 'var', or 'end'.")
+
+    # 输入 Text
+    text = input("Enter TTS text: ").strip()
+
+    # 输入 End Session
+    end_session_input = input("End session? (y/n): ").strip().lower()
+    end_session = end_session_input in ["y", "yes"]
+
+    stream = magicdog.SpeechTTSStream()  # 无参构造
+    stream.id = stream_id
+    stream.type = stream_type
+    stream.text = text
+    stream.end_session = end_session
+
+    return stream
+
+
 def main():
     """Main function"""
     global robot
@@ -261,6 +340,23 @@ def main():
         # 2.4 Unsubscribe from audio stream
         elif key == "9":
             unsubscribe_audio_stream(audio_controller)
+        # 4. Speech IO Functions
+        # 4.1 Open speech IO
+        elif key == "d":
+            open_speech_io(audio_controller)
+        # 4.2 Close speech IO
+        elif key == "e":
+            close_speech_io(audio_controller)
+        # 4.3 Subscribe to speech ASR
+        elif key == "f":
+            subscribe_speech_asr(audio_controller)
+        # 4.4 Unsubscribe from speech ASR
+        elif key == "g":
+            unsubscribe_speech_asr(audio_controller)
+        # 4.5 Publish speech TTS
+        elif key == "h":
+            data = get_speech_tts_input()
+            audio_controller.publish_speech_tts(data)
         # Help
         elif key == "?":
             print_help()

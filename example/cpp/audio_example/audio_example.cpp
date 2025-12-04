@@ -40,6 +40,13 @@ void print_help() {
   std::cout << "  8        Function 8: Subscribe to audio stream" << std::endl;
   std::cout << "  9        Function 9: Unsubscribe from audio stream" << std::endl;
   std::cout << "" << std::endl;
+  std::cout << "Speech IO Functions:" << std::endl;
+  std::cout << "  d        Function d: Open speech io" << std::endl;
+  std::cout << "  e        Function e: Close speech io" << std::endl;
+  std::cout << "  f        Function f: Subscribe to speech asr" << std::endl;
+  std::cout << "  g        Function g: Unsubscribe from speech asr" << std::endl;
+  std::cout << "  h        Function h: Publish speech tts" << std::endl;
+  std::cout << "" << std::endl;
   std::cout << "  ?        Function ?: Print help" << std::endl;
   std::cout << "  ESC      Exit program" << std::endl;
 }
@@ -195,13 +202,99 @@ void get_voice_config() {
   std::cout << "Dialog config - DOA enable: " << voice_config.dialog_config.is_doa_enable << std::endl;
 }
 
+void open_speech_io() {
+  auto& audio_controller = robot->GetAudioController();
+
+  auto status = audio_controller.ControlSpeechIO(true);
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "open speech io failed, code: " << status.code
+              << ", message: " << status.message << std::endl;
+    return;
+  }
+  std::cout << "open speech io success" << std::endl;
+}
+
+void close_speech_io() {
+  auto& audio_controller = robot->GetAudioController();
+
+  auto status = audio_controller.ControlSpeechIO(false);
+  if (status.code != ErrorCode::OK) {
+    std::cerr << "close speech io failed, code: " << status.code
+              << ", message: " << status.message << std::endl;
+    return;
+  }
+  std::cout << "close speech io success" << std::endl;
+}
+
+void subscribe_speech_asr() {
+  auto& audio_controller = robot->GetAudioController();
+
+  audio_controller.SubscribeSpeechASRStream([](const std::shared_ptr<SpeechASRStream> data) {
+    std::cout << "Received speech asr data, id: " << data->id << std::endl;
+    std::cout << "                        type: " << data->type << std::endl;
+    std::cout << "                        text: " << data->text << std::endl;
+    std::cout << "\r";
+    std::cout.flush();
+  });
+
+  std::cout << "Subscribed to speech asr" << std::endl;
+}
+
+void unsubscribe_speech_asr() {
+  auto& audio_controller = robot->GetAudioController();
+
+  audio_controller.UnsubscribeSpeechASRStream();
+  std::cout << "Unsubscribed from speech asr" << std::endl;
+}
+
+void publish_speech_tts(const SpeechTTSStream& data) {
+  auto& audio_controller = robot->GetAudioController();
+  // begin 开始
+  // var 中间结果
+  // end 结束
+  audio_controller.PublishSpeechTTSStream(data);
+  std::cout << "Published to speech tts" << std::endl;
+}
+
+SpeechTTSStream get_speech_tts_input() {
+  SpeechTTSStream stream;
+
+  std::cout << "=== Speech TTS Stream Input ===" << std::endl;
+
+  // 输入 ID
+  std::cout << "Enter request ID: ";
+  std::getline(std::cin, stream.id);
+
+  // 输入 Type 并验证
+  while (true) {
+    std::cout << "Enter type (begin/var/end): ";
+    std::getline(std::cin, stream.type);
+    if (stream.type == "begin" || stream.type == "var" || stream.type == "end") {
+      break;
+    }
+    std::cout << "Invalid type! Please enter 'begin', 'var', or 'end'." << std::endl;
+  }
+
+  // 输入 Text
+  std::cout << "Enter TTS text: ";
+  std::getline(std::cin, stream.text);
+
+  // 输入 End Session
+  std::cout << "End session? (y/n): ";
+  std::string end_session_input;
+  std::getline(std::cin, end_session_input);
+  stream.end_session = (end_session_input == "y" || end_session_input == "Y");
+
+  return stream;
+}
+
 int main(int argc, char* argv[]) {
   // Bind SIGINT (Ctrl+C)
   signal(SIGINT, signalHandler);
 
   print_help();
 
-  std::string local_ip = "192.168.54.111";
+  std::string local_ip = "192.168.55.10";
   robot = std::make_unique<MagicRobot>();
 
   // Configure local IP address for direct network connection and initialize SDK
@@ -263,6 +356,23 @@ int main(int argc, char* argv[]) {
       case '9':
         unsubscribe_audio_stream();
         break;
+      case 'd':
+        open_speech_io();
+        break;
+      case 'e':
+        close_speech_io();
+        break;
+      case 'f':
+        subscribe_speech_asr();
+        break;
+      case 'g':
+        unsubscribe_speech_asr();
+        break;
+      case 'h': {
+        SpeechTTSStream data;
+        data = get_speech_tts_input();
+        publish_speech_tts(data);
+      } break;
       case '?':
         print_help();
         break;
