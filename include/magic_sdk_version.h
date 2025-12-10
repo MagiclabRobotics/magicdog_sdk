@@ -2,7 +2,7 @@
 
 #define SDK_VERSION_MAJOR 1
 #define SDK_VERSION_MINOR 2
-#define SDK_VERSION_PATCH 0
+#define SDK_VERSION_PATCH 1
 
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
