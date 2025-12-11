@@ -5,6 +5,13 @@ All significant changes will be documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.2.1-hotfix1] - 2025-12-11
+
+**Corresponding Core Firmware Version: >= MagicDog 20251129**
+
+### Added
+- Added Chinese-language SDK development documentation;
+
 ## [v1.2.1] - 2025-12-04
 
 **Corresponding Core Firmware Version: >= MagicDog 20251129**
