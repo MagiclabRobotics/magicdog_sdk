@@ -10,7 +10,7 @@ and adheres to [Semantic Versioning](https://semver.org/).
 **Corresponding Core Firmware Version: >= MagicDog 20251129**
 
 ### Added
-- Added Chinese-language SDK development documentation;
+- Added SDK development documentation;
 
 ## [v1.2.1] - 2025-12-04
 
