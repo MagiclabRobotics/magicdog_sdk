@@ -1,5 +1,11 @@
 # magicdog_sdk
 
+## SDK Documentation
+
+English documentation: [en_pdf](./doc/en)
+
+Chinese documentation: [zh_pdf](./doc/zh)
+
 ## SDK Environment Requirements
 
 This SDK requires the following software and hardware environment to function properly. Please ensure all dependencies are installed and configured before using the SDK.
