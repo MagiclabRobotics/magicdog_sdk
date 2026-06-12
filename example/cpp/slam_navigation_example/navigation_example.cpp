@@ -471,7 +471,7 @@ int main(int argc, char* argv[]) {
   try {
     // Configure local IP address for direct network connection and initialize SDK
     std::string localIp = "192.168.55.10";
-    if (!robot->Initialize(localIp)) {
+    if (!robot->InitializeGrpcOnly(localIp, SdkFeature::HighLevelMotion | SdkFeature::SlamNavigation)) {
       std::cerr << "Failed to initialize robot SDK" << std::endl;
       robot->Shutdown();
       return -1;

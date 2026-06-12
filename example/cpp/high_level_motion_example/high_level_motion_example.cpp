@@ -107,6 +107,7 @@ void execute_trick(const std::string& cmd) {
     } else {
       action = TrickAction::ACTION_NONE;
     }
+    // action = static_cast<TrickAction>(std::stoi(cmd));
 
     auto& high_controller = robot->GetHighLevelMotionController();
     auto status = high_controller.ExecuteTrick(action);
@@ -213,7 +214,7 @@ int main(int argc, char* argv[]) {
   std::cout << "MagicDog SDK C++ Example Program" << std::endl;
 
   robot = std::make_unique<MagicRobot>();
-  if (!robot->Initialize("192.168.55.10")) {
+  if (!robot->InitializeGrpcOnly("192.168.55.10", SdkFeature::HighLevelMotion)) {
     std::cerr << "Initialization failed" << std::endl;
     return -1;
   }

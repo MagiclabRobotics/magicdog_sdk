@@ -44,11 +44,24 @@ class MAGIC_EXPORT_API MagicRobot final : public NonCopyable {
   ~MagicRobot();
 
   /**
-   * @brief Initialize the robot system, including controllers, network, and other submodules.
-   * @param local_ip Local IP address, used for communication binding or identity identification.
-   * @return Whether initialization is successful.
+   * @brief Initialize with full SDK (gRPC + LCM on PC, all modules).
+   * @param local_ip Local IP on the interface used to reach the robot.
    */
   bool Initialize(const std::string& local_ip);
+
+  /**
+   * @brief Initialize with explicit transport, feature set, and robot endpoint.
+   */
+  bool Initialize(const SdkInitializeOptions& options);
+
+  /**
+   * @brief Initialize selected modules over gRPC only (no PC-side LCM, WiFi/AP friendly).
+   * @param local_ip Local IP on the interface used to reach the robot.
+   * @param features Modules to enable, e.g. SdkFeature::HighLevelMotion | SdkFeature::SlamNavigation.
+   * @param robot_grpc_ip Robot eame_app address.
+   */
+  bool InitializeGrpcOnly(const std::string& local_ip, SdkFeature features,
+                          const std::string& robot_grpc_ip = "192.168.55.200");
 
   /**
    * @brief Shutdown the robot system and release resources.

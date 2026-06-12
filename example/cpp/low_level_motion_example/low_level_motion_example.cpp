@@ -64,7 +64,7 @@ int main() {
     }
     
     std::cout << "Waiting for motion mode to change to passive" << std::endl;
-    GaitMode current_mode = GaitMode::GAIT_DEFAULT;
+    GaitMode current_mode = GaitMode::GAIT_UNKNOWN;
     while (current_mode != GaitMode::GAIT_PASSIVE) {
         status = high_controller.GetGait(current_mode);
         if (status.code != ErrorCode::OK) {

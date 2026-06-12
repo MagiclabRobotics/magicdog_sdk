@@ -31,6 +31,53 @@ struct Status {
   std::string message;
 };
 
+/**
+ * @brief SDK transport mode (PC-side link to the robot).
+ *
+ * GrpcOnly uses only gRPC to eame_app (no LCM on the PC). Suitable for robot AP or
+ * WiFi/router environments where UDP multicast is unreliable. Which SDK modules are
+ * enabled is chosen by SdkInitializeOptions::features, not by this enum.
+ */
+enum class SdkTransportMode : int8_t {
+  Default = 0,   ///< gRPC + LCM on PC (full SDK features)
+  GrpcOnly = 1   ///< gRPC only on PC (no LCM multicast)
+};
+
+/**
+ * @brief SDK feature modules to enable at Initialize (bitmask, combinable with |).
+ */
+enum class SdkFeature : uint32_t {
+  None = 0,
+  HighLevelMotion = 1u << 0,
+  SlamNavigation = 1u << 1,
+  // LowLevelMotion = 1u << 2,
+  // Audio = 1u << 3,
+  // Sensor = 1u << 4,
+  All = 0xFFFFFFFFu,
+};
+
+constexpr SdkFeature operator|(SdkFeature a, SdkFeature b) {
+  return static_cast<SdkFeature>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+
+constexpr SdkFeature operator&(SdkFeature a, SdkFeature b) {
+  return static_cast<SdkFeature>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+
+inline bool HasSdkFeature(SdkFeature features, SdkFeature feature) {
+  return (static_cast<uint32_t>(features & feature)) != 0;
+}
+
+/**
+ * @brief Options for MagicRobot::Initialize.
+ */
+struct SdkInitializeOptions {
+  std::string local_ip;
+  SdkTransportMode transport = SdkTransportMode::Default;
+  std::string robot_grpc_ip = "192.168.55.200";
+  SdkFeature features = SdkFeature::All;
+};
+
 /************************************************************
  *                        State Info                        *
  ************************************************************/
@@ -140,26 +187,27 @@ enum class ControllerLevel : int8_t {
  * @brief Robot gait mode enumeration, suitable for state machine control
  */
 enum class GaitMode : int32_t {
+  GAIT_UNKNOWN = -1,
   GAIT_PASSIVE = 0,             // Drop (disable motor enable)
   GAIT_STAND_R = 2,             // Position control stand, RecoveryStand
   GAIT_STAND_B = 3,             // Force control stand, pose show, BalanceStand
   GAIT_RUN_FAST = 8,            // Fast run
   GAIT_DOWN_CLIMB_STAIRS = 9,   // Down stairs => blind walk => slow run
-  GAIT_TROT = 10,               // Trot
+  // GAIT_TROT = 10,               // Trot
   GAIT_PRONK = 11,              // Jump
-  GAIT_BOUND = 12,              // Bound (front-back jump)
-  GAIT_AMBLE = 14,              // Amble (cross step)
-  GAIT_CRAWL = 29,              // Crawl
+  // GAIT_BOUND = 12,              // Bound (front-back jump)
+  // GAIT_AMBLE = 14,              // Amble (cross step)
+  // GAIT_CRAWL = 29,              // Crawl
   GAIT_LOWLEVL_SDK = 30,        // Low-level SDK gait
-  GAIT_WALK = 39,               // Walk
-  GAIT_UP_CLIMB_STAIRS = 56,    // Up stairs (all terrain)
+  // GAIT_WALK = 39,               // Walk
+  // GAIT_UP_CLIMB_STAIRS = 56,    // Up stairs (all terrain)
   GAIT_RL_TERRAIN = 110,        // All terrain
-  GAIT_RL_FALL_RECOVERY = 111,  // Fall recovery
+  // GAIT_RL_FALL_RECOVERY = 111,  // Fall recovery
   GAIT_RL_HAND_STAND = 112,     // Handstand
   GAIT_RL_FOOT_STAND = 113,     // Upright
-  GAIT_ENTER_RL = 1001,         // Enter RL
-  GAIT_DEFAULT = 99,            // Default
-  GAIT_NONE = 9999,             // No gait
+  // GAIT_ENTER_RL = 1001,         // Enter RL
+  // GAIT_DEFAULT = 99,            // Default
+  // GAIT_NONE = 9999,             // No gait
 };
 
 /**

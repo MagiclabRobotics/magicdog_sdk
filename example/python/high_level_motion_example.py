@@ -72,6 +72,7 @@ def execute_trick(cmd):
     global high_controller
     try:
         action = get_action(cmd)
+        logging.info(f"Execute trick: {action}")
         # Execute lie down trick
         status = high_controller.execute_trick(action)
         if status.code != magicdog.ErrorCode.OK:
@@ -86,23 +87,45 @@ def execute_trick(cmd):
 def change_gait_to_down_climb_stairs():
     global high_controller
     try:
-        current_gait = high_controller.get_gait()
+        status, current_gait = high_controller.get_gait()
+        if status.code != magicdog.ErrorCode.OK:
+            logging.error(
+                "Failed to get current gait, code: %s, message: %s",
+                status.code,
+                status.message,
+            )
+            return False
+
         if current_gait != magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS:
             status = high_controller.set_gait(magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS)
             if status.code != magicdog.ErrorCode.OK:
-                logging.error(f"Failed to set down climb stairs gait: {status.message}")
+                logging.error(
+                    "Failed to set down climb stairs gait, code: %s, message: %s",
+                    status.code,
+                    status.message,
+                )
                 return False
 
             # Wait for gait switch to complete
-            while (
-                high_controller.get_gait() != magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS
-            ):
-                time.sleep(0.01)
-        logging.info("Gait changed to down climb stairs")
-        return True
+            while True:
+                time.sleep(0.1)
+                status, current_gait = high_controller.get_gait()
+                if status.code != magicdog.ErrorCode.OK:
+                    logging.error(
+                        "Failed to get current gait, code: %s, message: %s",
+                        status.code,
+                        status.message,
+                    )
+                    continue
+                if current_gait != magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS:
+                    logging.info("Gait not changed to down climb stairs, current gait: %s, waiting for next check", current_gait)
+                    continue
+                logging.info("Gait changed to down climb stairs, current gait: %s", current_gait)
+                break   
     except Exception as e:
         logging.error(f"Error changing gait: {e}")
         return False
+    return True
 
 
 def print_help():
@@ -195,6 +218,10 @@ def get_action(cmd):
         return magicdog.TrickAction.ACTION_SHAKE_HEAD
     else:
         return magicdog.TrickAction.ACTION_NONE
+    
+    # if not cmd.isdigit():
+    #     return magicdog.TrickAction.ACTION_NONE
+    # return magicdog.TrickAction(int(cmd))
 
 
 def main():
@@ -206,7 +233,7 @@ def main():
     logging.info("MagicDog SDK Python Example Program")
 
     robot = magicdog.MagicRobot()
-    if not robot.initialize("192.168.55.10"):
+    if not robot.initialize_grpc_only("192.168.55.10", magicdog.SdkFeature.HIGH_LEVEL_MOTION):
         logging.error("Initialization failed")
         return
 

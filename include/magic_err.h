@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <unordered_map>
+
 namespace magic::dog {
 
 static std::unordered_map<uint16_t, std::string> error_code_map = {
@@ -68,5 +71,18 @@ static std::unordered_map<uint16_t, std::string> error_code_map = {
     {0x4103, "Slam failed to receive odom data, error"},
     {0x4205, "slam map error"},
 };
+
+/** Resolve fault error_code via error_code_map (uses lower 16 bits). */
+inline std::string LookupErrorCodeMessage(int32_t error_code) {
+  const uint16_t key = static_cast<uint16_t>(error_code & 0xFFFFu);
+  const auto it = error_code_map.find(key);
+  if (it != error_code_map.end()) {
+    return it->second;
+  }
+  std::ostringstream oss;
+  oss << "Unknown error (0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4)
+      << key << ")";
+  return oss.str();
+}
 
 }  // namespace magic::dog

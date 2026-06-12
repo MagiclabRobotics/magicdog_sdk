@@ -48,10 +48,21 @@ def main():
         return
 
     logging.info("Waiting for motion mode to change to passive")
-    current_mode = magicdog.GaitMode.GAIT_DEFAULT
-    while current_mode != magicdog.GaitMode.GAIT_PASSIVE:
-        current_mode = high_controller.get_gait()
+    while True:
         time.sleep(0.1)
+        status, current_gait = high_controller.get_gait()
+        if status.code != magicdog.ErrorCode.OK:
+            logging.error(
+                "Failed to get current gait, code: %s, message: %s",
+                status.code,
+                status.message,
+            )
+            continue
+        if current_gait != magicdog.GaitMode.GAIT_PASSIVE:
+            logging.info("Gait not changed to passive, current gait: %s, waiting for next check", current_gait)
+            continue
+        logging.info("Gait changed to passive, current gait: %s", current_gait)
+        break
 
     time.sleep(2)
 
@@ -63,9 +74,21 @@ def main():
         return
 
     logging.info("Waiting for motion mode to change to low level")
-    while current_mode != magicdog.GaitMode.GAIT_LOWLEVL_SDK:
-        current_mode = high_controller.get_gait()
+    while True:
         time.sleep(0.1)
+        status, current_gait = high_controller.get_gait()
+        if status.code != magicdog.ErrorCode.OK:
+            logging.error(
+                "Failed to get current gait, code: %s, message: %s",
+                status.code,
+                status.message,
+            )
+            continue
+        if current_gait != magicdog.GaitMode.GAIT_LOWLEVL_SDK:
+            logging.info("Gait not changed to low level, current gait: %s, waiting for next check", current_gait)
+            continue
+        logging.info("Gait changed to low level, current gait: %s", current_gait)
+        break
 
     time.sleep(2)
 

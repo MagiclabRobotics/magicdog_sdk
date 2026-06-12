@@ -554,7 +554,10 @@ def main():
     try:
         # Configure local IP address for direct network connection and initialize SDK
         local_ip = "192.168.55.10"
-        if not robot.initialize(local_ip):
+        if not robot.initialize_grpc_only(
+            local_ip,
+            magicdog.SdkFeature.HIGH_LEVEL_MOTION | magicdog.SdkFeature.SLAM_NAVIGATION,
+        ):
             logging.error("Failed to initialize robot SDK")
             robot.shutdown()
             return -1

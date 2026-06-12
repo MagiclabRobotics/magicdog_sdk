@@ -354,23 +354,45 @@ def close_slam():
 def change_gait_to_down_climb_stairs():
     global high_controller
     try:
-        current_gait = high_controller.get_gait()
+        status, current_gait = high_controller.get_gait()
+        if status.code != magicdog.ErrorCode.OK:
+            logging.error(
+                "Failed to get current gait, code: %s, message: %s",
+                status.code,
+                status.message,
+            )
+            return False
+
         if current_gait != magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS:
             status = high_controller.set_gait(magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS)
             if status.code != magicdog.ErrorCode.OK:
-                logging.error(f"Failed to set down climb stairs gait: {status.message}")
+                logging.error(
+                    "Failed to set down climb stairs gait, code: %s, message: %s",
+                    status.code,
+                    status.message,
+                )
                 return False
 
             # Wait for gait switch to complete
-            while (
-                high_controller.get_gait() != magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS
-            ):
-                time.sleep(0.01)
-        logging.info("Gait changed to down climb stairs")
-        return True
+            while True:
+                time.sleep(0.1)
+                status, current_gait = high_controller.get_gait()
+                if status.code != magicdog.ErrorCode.OK:
+                    logging.error(
+                        "Failed to get current gait, code: %s, message: %s",
+                        status.code,
+                        status.message,
+                    )
+                    continue
+                if current_gait != magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS:
+                    logging.info("Gait not changed to down climb stairs, current gait: %s, waiting for next check", current_gait)
+                    continue
+                logging.info("Gait changed to down climb stairs, current gait: %s", current_gait)
+                break   
     except Exception as e:
         logging.error(f"Error changing gait: {e}")
         return False
+    return True
 
 
 def send_joystick_command(high_controller, left_x, left_y, right_x, right_y):
@@ -436,7 +458,10 @@ def main():
     try:
         # Configure local IP address for direct network connection and initialize SDK
         local_ip = "192.168.55.10"
-        if not robot.initialize(local_ip):
+        if not robot.initialize_grpc_only(
+            local_ip,
+            magicdog.SdkFeature.HIGH_LEVEL_MOTION | magicdog.SdkFeature.SLAM_NAVIGATION,
+        ):
             logging.error("Failed to initialize robot SDK")
             robot.shutdown()
             return -1
