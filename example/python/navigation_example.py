@@ -11,6 +11,7 @@ import cv2
 import random
 
 import magicdog_python as magicdog
+from sdk_feature_utils import motion_and_slam_features
 
 # Configure logging format and level
 logging.basicConfig(
@@ -554,10 +555,7 @@ def main():
     try:
         # Configure local IP address for direct network connection and initialize SDK
         local_ip = "192.168.55.10"
-        if not robot.initialize_grpc_only(
-            local_ip,
-            magicdog.SdkFeature.HIGH_LEVEL_MOTION | magicdog.SdkFeature.SLAM_NAVIGATION,
-        ):
+        if not robot.initialize_grpc_only(local_ip, motion_and_slam_features()):
             logging.error("Failed to initialize robot SDK")
             robot.shutdown()
             return -1

@@ -9,6 +9,7 @@ MagicDog navigation GUI — SdkTransportMode::GrpcOnly (WiFi / robot AP).
 - Video: RTSP preview (default rtsp://<robot-ip>:8082)
 - Audio: volume, TTS, voice config (gRPC)
 - Display: face expressions get/set (gRPC)
+- Sensor: open/close hardware sensors (gRPC)
 """
 
 from __future__ import annotations
@@ -99,8 +100,11 @@ def _yview_scroll_dy(widget: tk.Widget, dy: int) -> None:
     widget.yview_scroll(-units, "units")
 
 
-def bind_content_drag_scroll(widget: tk.Widget, *, threshold: int = 0) -> None:
+def bind_content_drag_scroll(
+    widget: tk.Widget, *, target: Optional[tk.Widget] = None, threshold: int = 0
+) -> None:
     """Hold left button and drag vertically to scroll (content area)."""
+    scroll_target = target or widget
     if getattr(widget, "_drag_scroll_bound", False):
         return
     widget._drag_scroll_bound = True
@@ -118,10 +122,10 @@ def bind_content_drag_scroll(widget: tk.Widget, *, threshold: int = 0) -> None:
             if abs(dy) < threshold:
                 return
             state["active"] = True
-            if isinstance(widget, tk.Listbox):
-                widget.selection_clear(0, tk.END)
+            if isinstance(scroll_target, tk.Listbox):
+                scroll_target.selection_clear(0, tk.END)
         state["y"] = event.y_root
-        _yview_scroll_dy(widget, dy)
+        _yview_scroll_dy(scroll_target, dy)
 
     def _release(_event: tk.Event) -> None:
         state["y"] = None
@@ -823,6 +827,30 @@ class AppTheme:
 
 ChoiceRow = Tuple[str, object, str]
 
+# (state key, UI title, description)
+SENSOR_HW_ROWS: List[Tuple[str, str, str]] = [
+    (
+        "channel",
+        "数据通道",
+        "open_channel_switch / close_channel_switch；打开其它传感器前通常需先开启通道。",
+    ),
+    (
+        "laser_scan",
+        "激光雷达 · LaserScan",
+        "OpenLaserScan / CloseLaserScan",
+    ),
+    (
+        "rgbd_camera",
+        "RGBD 深度相机",
+        "OpenRgbdCamera / CloseRgbdCamera",
+    ),
+    (
+        "binocular_camera",
+        "双目相机",
+        "OpenBinocularCamera / CloseBinocularCamera",
+    ),
+]
+
 GAIT_CHOICES: List[ChoiceRow] = [
     (
         "Stand (recovery) · 恢复站立",
@@ -1399,6 +1427,13 @@ class RobotSession:
         self.slam = None
         self.audio = None
         self.display = None
+        self.sensor = None
+        self._sensor_channel_open = False
+        self._sensor_hw: dict[str, bool] = {
+            "laser_scan": False,
+            "rgbd_camera": False,
+            "binocular_camera": False,
+        }
         self._lock = threading.Lock()
         self.connected = False
         self.joy_active = False
@@ -1442,9 +1477,10 @@ class RobotSession:
             self.high.enable_joy_stick()
             audio_note = self._setup_audio()
             display_note = self._setup_display()
+            sensor_note = self._setup_sensor()
             self.connected = True
             self._start_poll()
-            return True, f"Connected (GrpcOnly). {audio_note} {display_note}"
+            return True, f"Connected (GrpcOnly). {audio_note} {display_note} {sensor_note}"
 
     def disconnect(self) -> None:
         with self._lock:
@@ -1452,6 +1488,7 @@ class RobotSession:
             self._stop_poll()
             self._teardown_audio()
             self._teardown_display()
+            self._teardown_sensor()
             if self.high:
                 try:
                     self.high.disable_joy_stick()
@@ -1468,6 +1505,10 @@ class RobotSession:
             self.slam = None
             self.audio = None
             self.display = None
+            self.sensor = None
+            self._sensor_channel_open = False
+            for key in self._sensor_hw:
+                self._sensor_hw[key] = False
             self._last_gait = None
             self.robot_state = None
             self.connected = False
@@ -1783,6 +1824,146 @@ class RobotSession:
         except Exception as exc:
             logging.exception("display command")
             return False, None, str(exc)
+
+    def _setup_sensor(self) -> str:
+        try:
+            self.sensor = self.robot.get_sensor_controller()
+            if not self.sensor.initialize():
+                self.sensor = None
+                return "Sensor: initialize failed."
+            self._sensor_channel_open = False
+            for key in self._sensor_hw:
+                self._sensor_hw[key] = False
+            return "Sensor: gRPC ready."
+        except Exception as exc:
+            logging.exception("sensor setup")
+            self.sensor = None
+            return f"Sensor unavailable ({exc})"
+
+    def _teardown_sensor(self) -> None:
+        if self.robot:
+            for name in ("binocular_camera", "rgbd_camera", "laser_scan"):
+                if self._sensor_hw.get(name) and self.sensor:
+                    try:
+                        if name == "laser_scan":
+                            self.sensor.close_laser_scan()
+                        elif name == "rgbd_camera":
+                            self.sensor.close_rgbd_camera()
+                        else:
+                            self.sensor.close_binocular_camera()
+                    except Exception:
+                        logging.exception("sensor close %s", name)
+            if self._sensor_channel_open:
+                try:
+                    self.robot.close_channel_switch()
+                except Exception:
+                    logging.exception("sensor channel close")
+        if self.sensor:
+            try:
+                self.sensor.shutdown()
+            except Exception:
+                logging.exception("sensor shutdown")
+        self.sensor = None
+        self._sensor_channel_open = False
+        for key in self._sensor_hw:
+            self._sensor_hw[key] = False
+
+    def get_sensor_state(self) -> dict[str, bool]:
+        with self._lock:
+            return {
+                "channel": self._sensor_channel_open,
+                **self._sensor_hw,
+            }
+
+    def open_sensor_channel(self) -> Tuple[bool, str]:
+        if not self.connected or not self.robot:
+            return False, "Not connected"
+        with self._lock:
+            if self._sensor_channel_open:
+                return True, "Channel already open"
+        try:
+            st = self.robot.open_channel_switch()
+            ok = _status_ok(st)
+            if ok:
+                with self._lock:
+                    self._sensor_channel_open = True
+            return ok, st.message
+        except Exception as exc:
+            logging.exception("sensor command")
+            return False, str(exc)
+
+    def close_sensor_channel(self) -> Tuple[bool, str]:
+        if not self.connected or not self.robot:
+            return False, "Not connected"
+        with self._lock:
+            if not self._sensor_channel_open:
+                return True, "Channel already closed"
+        try:
+            st = self.robot.close_channel_switch()
+            ok = _status_ok(st)
+            if ok:
+                with self._lock:
+                    self._sensor_channel_open = False
+            return ok, st.message
+        except Exception as exc:
+            logging.exception("sensor command")
+            return False, str(exc)
+
+    def open_sensor_hw(self, name: str) -> Tuple[bool, str]:
+        if name == "channel":
+            return self.open_sensor_channel()
+        if name not in self._sensor_hw:
+            return False, f"Unknown sensor: {name}"
+        if not self.connected:
+            return False, "Not connected"
+        if not self.sensor:
+            return False, "Sensor controller unavailable"
+        with self._lock:
+            if self._sensor_hw[name]:
+                return True, f"{name} already open"
+        try:
+            if name == "laser_scan":
+                st = self.sensor.open_laser_scan()
+            elif name == "rgbd_camera":
+                st = self.sensor.open_rgbd_camera()
+            else:
+                st = self.sensor.open_binocular_camera()
+            ok = _status_ok(st)
+            if ok:
+                with self._lock:
+                    self._sensor_hw[name] = True
+            return ok, st.message
+        except Exception as exc:
+            logging.exception("sensor command")
+            return False, str(exc)
+
+    def close_sensor_hw(self, name: str) -> Tuple[bool, str]:
+        if name == "channel":
+            return self.close_sensor_channel()
+        if name not in self._sensor_hw:
+            return False, f"Unknown sensor: {name}"
+        if not self.connected:
+            return False, "Not connected"
+        if not self.sensor:
+            return False, "Sensor controller unavailable"
+        with self._lock:
+            if not self._sensor_hw[name]:
+                return True, f"{name} already closed"
+        try:
+            if name == "laser_scan":
+                st = self.sensor.close_laser_scan()
+            elif name == "rgbd_camera":
+                st = self.sensor.close_rgbd_camera()
+            else:
+                st = self.sensor.close_binocular_camera()
+            ok = _status_ok(st)
+            if ok:
+                with self._lock:
+                    self._sensor_hw[name] = False
+            return ok, st.message
+        except Exception as exc:
+            logging.exception("sensor command")
+            return False, str(exc)
 
 
 @dataclass
@@ -2210,6 +2391,7 @@ class NavVizApp:
         self._build_nav_map_tab()
         self._build_audio_tab()
         self._build_display_tab()
+        self._build_sensor_tab()
         self._build_video_tab()
 
         log_host = ttk.Frame(self._main_paned)
@@ -2249,7 +2431,7 @@ class NavVizApp:
         ).pack(side=tk.LEFT)
         tk.Label(
             row,
-            text="gRPC  ·  Motion  ·  SLAM  ·  Nav  ·  Audio  ·  Display  ·  Video",
+            text="gRPC  ·  Motion  ·  SLAM  ·  Nav  ·  Audio  ·  Display  ·  Sensor  ·  Video",
             bg=t.SURFACE,
             fg=t.TEXT_HINT,
             font=t.font_subtitle,
@@ -2553,7 +2735,9 @@ class NavVizApp:
             side=tk.LEFT, fill=tk.BOTH, expand=True, padx=1, pady=1
         )
         self.theme.mount_scroll_rail(state_inner, self.motion_robot_state_text)
-        bind_content_drag_scroll(self.motion_robot_state_text)
+        bind_content_drag_scroll(
+            state_inner, target=self.motion_robot_state_text
+        )
         self._set_motion_robot_state_text(
             _format_motion_robot_state(False, None, None)
         )
@@ -2622,7 +2806,9 @@ class NavVizApp:
         win_id = canvas.create_window((0, 0), window=inner, anchor=tk.NW)
 
         def _on_inner_configure(_event=None) -> None:
+            y0 = canvas.yview()[0]
             canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.yview_moveto(y0)
 
         def _on_canvas_configure(event) -> None:
             canvas.itemconfigure(win_id, width=event.width)
@@ -3005,11 +3191,16 @@ class NavVizApp:
     def _set_motion_robot_state_text(self, text: str) -> None:
         if not hasattr(self, "motion_robot_state_text"):
             return
+        if text == getattr(self, "_motion_robot_state_cached", None):
+            return
         w = self.motion_robot_state_text
+        y0 = w.yview()[0]
         w.config(state=tk.NORMAL)
         w.delete("1.0", tk.END)
         w.insert("1.0", text)
         w.config(state=tk.DISABLED)
+        w.yview_moveto(y0)
+        self._motion_robot_state_cached = text
 
     def _update_motion_robot_state_panel(self) -> None:
         if not hasattr(self, "motion_robot_state_text"):
@@ -3198,6 +3389,7 @@ class NavVizApp:
             self._refresh_gait_current_ui()
             self._update_audio_status_label()
             self._update_display_status_label()
+            self._update_sensor_status_labels()
             self._update_motion_robot_state_panel()
         else:
             self._set_connection_ui("fail")
@@ -3213,6 +3405,7 @@ class NavVizApp:
         self._set_gait_current_idle(disconnected=True)
         self._update_audio_status_label()
         self._update_display_status_label()
+        self._update_sensor_status_labels()
         self._log_action("Disconnect", True, "已断开连接")
         self._update_motion_robot_state_panel()
 
@@ -3549,6 +3742,115 @@ class NavVizApp:
         ).pack(side=tk.LEFT, padx=8)
 
         self._display_faces_by_index: List[object] = []
+
+    def _build_sensor_tab(self) -> None:
+        tab = ttk.Frame(self.notebook)
+        self.notebook.add(tab, text=" Sensor ")
+        scroll = self._scrollable_frame(tab)
+        t = self.theme
+
+        self.theme.info_box(
+            scroll,
+            "通过 gRPC 打开/关闭传感器硬件与数据通道（不含数据订阅）。"
+            "建议先 Open 数据通道，再按需打开激光雷达、RGBD 或双目相机；"
+            "Disconnect 时会自动全部关闭。",
+        )
+
+        self.sensor_status_label = ttk.Label(
+            scroll, text="Sensor: 未连接", style="StatusIdle.TLabel", wraplength=t.INFO_WRAP
+        )
+        self.sensor_status_label.pack(anchor=tk.W, padx=t.PAD_FRAME, pady=(0, t.PAD_ROW))
+
+        self._sensor_row_labels: dict[str, ttk.Label] = {}
+        for key, title, detail in SENSOR_HW_ROWS:
+            self._sensor_hw_row(scroll, key, title, detail)
+
+        util = ttk.LabelFrame(scroll, text=" 批量 ")
+        util.pack(fill=tk.X, padx=t.PAD_FRAME, pady=(t.PAD_ROW, t.PAD_TAB))
+        util_row = ttk.Frame(util, style="Card.TFrame")
+        util_row.pack(fill=tk.X, padx=t.PAD_INNER, pady=t.PAD_INNER)
+        ttk.Button(
+            util_row,
+            text="全部关闭",
+            style="Muted.TButton",
+            command=self._wrap_action("Close all sensors", self._on_sensor_close_all),
+        ).pack(side=tk.LEFT, padx=4)
+
+    def _sensor_hw_row(self, parent: tk.Widget, key: str, title: str, detail: str) -> None:
+        t = self.theme
+        rowf = ttk.LabelFrame(parent, text=f" {title} ")
+        rowf.pack(fill=tk.X, padx=t.PAD_FRAME, pady=t.PAD_ROW)
+        inner = ttk.Frame(rowf, style="Card.TFrame")
+        inner.pack(fill=tk.X, padx=t.PAD_INNER, pady=t.PAD_INNER)
+        ttk.Label(
+            inner, text=detail, style="CardMuted.TLabel", wraplength=t.INFO_WRAP
+        ).pack(anchor=tk.W)
+
+        btn_row = ttk.Frame(inner, style="Card.TFrame")
+        btn_row.pack(fill=tk.X, pady=(t.PAD_ROW, 0))
+        status_lbl = ttk.Label(btn_row, text="—", style="StatusIdle.TLabel")
+        status_lbl.pack(side=tk.LEFT, padx=(0, 12))
+        self._sensor_row_labels[key] = status_lbl
+
+        ttk.Button(
+            btn_row,
+            text="Open",
+            style="Accent.TButton",
+            command=self._wrap_action(
+                f"Open {title}", lambda k=key: self._on_sensor_open(k)
+            ),
+        ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(
+            btn_row,
+            text="Close",
+            style="Muted.TButton",
+            command=self._wrap_action(
+                f"Close {title}", lambda k=key: self._on_sensor_close(k)
+            ),
+        ).pack(side=tk.LEFT, padx=4)
+
+    def _update_sensor_status_labels(self) -> None:
+        if not hasattr(self, "sensor_status_label"):
+            return
+        if not self.session.connected:
+            self.sensor_status_label.config(
+                text="Sensor: 未连接", style="StatusIdle.TLabel"
+            )
+            for lbl in getattr(self, "_sensor_row_labels", {}).values():
+                lbl.config(text="—", style="StatusIdle.TLabel")
+            return
+        if not self.session.sensor:
+            self.sensor_status_label.config(
+                text="Sensor: 控制器不可用（数据通道开关仍可使用）",
+                style="StatusWarn.TLabel",
+            )
+        else:
+            self.sensor_status_label.config(
+                text="Sensor: 已连接 · gRPC（硬件开关）",
+                style="StatusOk.TLabel",
+            )
+        state = self.session.get_sensor_state()
+        for key, lbl in self._sensor_row_labels.items():
+            if state.get(key):
+                lbl.config(text="OPEN", style="StatusOk.TLabel")
+            else:
+                lbl.config(text="CLOSED", style="StatusIdle.TLabel")
+
+    def _on_sensor_open(self, key: str) -> None:
+        ok, msg = self.session.open_sensor_hw(key)
+        self._update_sensor_status_labels()
+        self._log_action(f"Open {key}", ok, msg)
+
+    def _on_sensor_close(self, key: str) -> None:
+        ok, msg = self.session.close_sensor_hw(key)
+        self._update_sensor_status_labels()
+        self._log_action(f"Close {key}", ok, msg)
+
+    def _on_sensor_close_all(self) -> None:
+        for key in ("binocular_camera", "rgbd_camera", "laser_scan", "channel"):
+            ok, msg = self.session.close_sensor_hw(key)
+            self._log_action(f"Close {key}", ok, msg)
+        self._update_sensor_status_labels()
 
     def _update_display_status_label(self) -> None:
         if not hasattr(self, "display_status_label"):
