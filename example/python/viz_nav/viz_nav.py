@@ -830,11 +830,6 @@ ChoiceRow = Tuple[str, object, str]
 # (state key, UI title, description)
 SENSOR_HW_ROWS: List[Tuple[str, str, str]] = [
     (
-        "channel",
-        "数据通道",
-        "open_channel_switch / close_channel_switch；打开其它传感器前通常需先开启通道。",
-    ),
-    (
         "laser_scan",
         "激光雷达 · LaserScan",
         "OpenLaserScan / CloseLaserScan",
@@ -1428,7 +1423,6 @@ class RobotSession:
         self.audio = None
         self.display = None
         self.sensor = None
-        self._sensor_channel_open = False
         self._sensor_hw: dict[str, bool] = {
             "laser_scan": False,
             "rgbd_camera": False,
@@ -1506,7 +1500,6 @@ class RobotSession:
             self.audio = None
             self.display = None
             self.sensor = None
-            self._sensor_channel_open = False
             for key in self._sensor_hw:
                 self._sensor_hw[key] = False
             self._last_gait = None
@@ -1831,7 +1824,6 @@ class RobotSession:
             if not self.sensor.initialize():
                 self.sensor = None
                 return "Sensor: initialize failed."
-            self._sensor_channel_open = False
             for key in self._sensor_hw:
                 self._sensor_hw[key] = False
             return "Sensor: gRPC ready."
@@ -1853,65 +1845,20 @@ class RobotSession:
                             self.sensor.close_binocular_camera()
                     except Exception:
                         logging.exception("sensor close %s", name)
-            if self._sensor_channel_open:
-                try:
-                    self.robot.close_channel_switch()
-                except Exception:
-                    logging.exception("sensor channel close")
         if self.sensor:
             try:
                 self.sensor.shutdown()
             except Exception:
                 logging.exception("sensor shutdown")
         self.sensor = None
-        self._sensor_channel_open = False
         for key in self._sensor_hw:
             self._sensor_hw[key] = False
 
     def get_sensor_state(self) -> dict[str, bool]:
         with self._lock:
-            return {
-                "channel": self._sensor_channel_open,
-                **self._sensor_hw,
-            }
-
-    def open_sensor_channel(self) -> Tuple[bool, str]:
-        if not self.connected or not self.robot:
-            return False, "Not connected"
-        with self._lock:
-            if self._sensor_channel_open:
-                return True, "Channel already open"
-        try:
-            st = self.robot.open_channel_switch()
-            ok = _status_ok(st)
-            if ok:
-                with self._lock:
-                    self._sensor_channel_open = True
-            return ok, st.message
-        except Exception as exc:
-            logging.exception("sensor command")
-            return False, str(exc)
-
-    def close_sensor_channel(self) -> Tuple[bool, str]:
-        if not self.connected or not self.robot:
-            return False, "Not connected"
-        with self._lock:
-            if not self._sensor_channel_open:
-                return True, "Channel already closed"
-        try:
-            st = self.robot.close_channel_switch()
-            ok = _status_ok(st)
-            if ok:
-                with self._lock:
-                    self._sensor_channel_open = False
-            return ok, st.message
-        except Exception as exc:
-            logging.exception("sensor command")
-            return False, str(exc)
+            return dict(self._sensor_hw)
 
     def open_sensor_hw(self, name: str) -> Tuple[bool, str]:
-        if name == "channel":
-            return self.open_sensor_channel()
         if name not in self._sensor_hw:
             return False, f"Unknown sensor: {name}"
         if not self.connected:
@@ -1938,8 +1885,6 @@ class RobotSession:
             return False, str(exc)
 
     def close_sensor_hw(self, name: str) -> Tuple[bool, str]:
-        if name == "channel":
-            return self.close_sensor_channel()
         if name not in self._sensor_hw:
             return False, f"Unknown sensor: {name}"
         if not self.connected:
@@ -3751,8 +3696,7 @@ class NavVizApp:
 
         self.theme.info_box(
             scroll,
-            "通过 gRPC 打开/关闭传感器硬件与数据通道（不含数据订阅）。"
-            "建议先 Open 数据通道，再按需打开激光雷达、RGBD 或双目相机；"
+            "通过 gRPC 打开/关闭传感器硬件（不含数据订阅）。"
             "Disconnect 时会自动全部关闭。",
         )
 
@@ -3821,7 +3765,7 @@ class NavVizApp:
             return
         if not self.session.sensor:
             self.sensor_status_label.config(
-                text="Sensor: 控制器不可用（数据通道开关仍可使用）",
+                text="Sensor: 控制器不可用",
                 style="StatusWarn.TLabel",
             )
         else:
@@ -3847,7 +3791,7 @@ class NavVizApp:
         self._log_action(f"Close {key}", ok, msg)
 
     def _on_sensor_close_all(self) -> None:
-        for key in ("binocular_camera", "rgbd_camera", "laser_scan", "channel"):
+        for key in ("binocular_camera", "rgbd_camera", "laser_scan"):
             ok, msg = self.session.close_sensor_hw(key)
             self._log_action(f"Close {key}", ok, msg)
         self._update_sensor_status_labels()
