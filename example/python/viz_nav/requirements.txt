@@ -2,3 +2,6 @@ numpy>=1.20
 matplotlib>=3.5
 opencv-python>=4.5
 Pillow>=9.0
+# Optional: YOLO detection on Video tab (general / person / pose)
+ultralytics>=8.0.0
+# Person DNN uses MobileNet-SSD Caffe files in viz_nav/models/ (auto-download on first use)

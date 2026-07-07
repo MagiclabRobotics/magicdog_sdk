@@ -6,7 +6,7 @@ MagicDog navigation GUI — SdkTransportMode::GrpcOnly (WiFi / robot AP).
 - Motion: gait, tricks, joystick (linear / angular velocity)
 - SLAM: mapping, map load/save/delete
 - Navigation & Map: workflow, occupancy grid, click-to-set pose/goal, navigate
-- Video: RTSP preview (default rtsp://<robot-ip>:8082)
+- Video: RTSP preview (default rtsp://<robot-ip>:8082) with optional OpenCV detection overlay
 - Audio: volume, TTS, voice config (gRPC)
 - Display: face expressions get/set (gRPC)
 - Sensor: open/close hardware sensors (gRPC)
@@ -17,6 +17,8 @@ from __future__ import annotations
 import os
 import re
 import socket
+import urllib.error
+import urllib.request
 
 import argparse
 import logging
@@ -28,6 +30,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
 from tkinter import messagebox, ttk
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
@@ -53,12 +56,20 @@ from matplotlib.patches import FancyArrow
 
 try:
     import cv2
-    from PIL import Image, ImageTk
+    from PIL import Image, ImageDraw, ImageFont, ImageTk
 
     cv2.setNumThreads(1)
     _HAS_RTSP_DEPS = True
 except ImportError:
     _HAS_RTSP_DEPS = False
+
+try:
+    from ultralytics import YOLO as _UltralyticsYOLO
+
+    _HAS_YOLO = True
+except ImportError:
+    _UltralyticsYOLO = None  # type: ignore[misc, assignment]
+    _HAS_YOLO = False
 
 # UI / matplotlib: prefer fonts with CJK coverage (Chinese labels in this app)
 _CJK_FONT_CANDIDATES = (
@@ -879,6 +890,35 @@ GAIT_CHOICES: List[ChoiceRow] = [
     ),
 ]
 
+# Gaits that support GetAllGaitSpeedRatio / SetGaitSpeedRatio (magic_grpc_client.cpp).
+GAIT_SPEED_RATIO_CHOICES: List[ChoiceRow] = [
+    (
+        "Run fast · 快跑",
+        magicdog.GaitMode.GAIT_RUN_FAST,
+        "快跑步态速度比例（前进 / 转向 / 侧移）。",
+    ),
+    (
+        "Down climb stairs (nav) · 导航盲走",
+        magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS,
+        "导航盲走步态速度比例；建图导航常用。",
+    ),
+    (
+        "RL terrain · 全地形",
+        magicdog.GaitMode.GAIT_RL_TERRAIN,
+        "全地形步态速度比例。",
+    ),
+    (
+        "RL hand stand · 倒立",
+        magicdog.GaitMode.GAIT_RL_HAND_STAND,
+        "倒立步态速度比例。",
+    ),
+    (
+        "RL foot stand · 正立",
+        magicdog.GaitMode.GAIT_RL_FOOT_STAND,
+        "正立步态速度比例。",
+    ),
+]
+
 TRICK_CHOICES: List[ChoiceRow] = [
     ("— · 无", magicdog.TrickAction.ACTION_NONE, "不执行特技；点击 Execute 无效果。"),
     ("Wiggle hip · 扭臀", magicdog.TrickAction.ACTION_WIGGLE_HIP, "扭屁股。娱乐动作。"),
@@ -1140,6 +1180,76 @@ def _gait_ui_label(gait: object) -> str:
     if val is not None and name.startswith("GAIT_"):
         return name
     return name
+
+
+def _format_gait_speed_ratio(ratio: object) -> str:
+    return (
+        f"fwd={ratio.straight_ratio:.2f} "
+        f"turn={ratio.turn_ratio:.2f} "
+        f"lat={ratio.lateral_ratio:.2f}"
+    )
+
+
+def _gait_speed_ratio_entries(ratios_map: object) -> List[Tuple[object, object]]:
+    """Normalize pybind GaitModeGaitSpeedRatioMap or dict to (gait, ratio) pairs."""
+    if ratios_map is None:
+        return []
+    if isinstance(ratios_map, dict):
+        return list(ratios_map.items())
+    entries: List[Tuple[object, object]] = []
+    try:
+        for key in ratios_map:
+            entries.append((key, ratios_map[key]))
+    except Exception:
+        return []
+    return entries
+
+
+def _gait_speed_ratio_lookup(ratios_map: object, gait: object):
+    if ratios_map is None:
+        return None
+    if isinstance(ratios_map, dict):
+        hit = ratios_map.get(gait)
+        if hit is not None:
+            return hit
+    else:
+        try:
+            return ratios_map[gait]
+        except (KeyError, TypeError):
+            pass
+    try:
+        target = int(gait)
+    except (TypeError, ValueError):
+        return None
+    for key, value in _gait_speed_ratio_entries(ratios_map):
+        try:
+            if int(key) == target:
+                return value
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _gait_speed_ratio_nonempty(ratios_map: object) -> bool:
+    if ratios_map is None:
+        return False
+    if isinstance(ratios_map, dict):
+        return bool(ratios_map)
+    try:
+        return len(ratios_map) > 0
+    except TypeError:
+        return bool(_gait_speed_ratio_entries(ratios_map))
+
+
+def _format_all_gait_speed_ratios(all_ratios: object) -> str:
+    ratios_map = getattr(all_ratios, "gait_speed_ratios", None)
+    entries = _gait_speed_ratio_entries(ratios_map)
+    if not entries:
+        return "—"
+    parts: List[str] = []
+    for gait_mode, ratio in sorted(entries, key=lambda item: int(item[0])):
+        parts.append(f"{_gait_enum_short_name(gait_mode)}: {_format_gait_speed_ratio(ratio)}")
+    return "; ".join(parts)
 
 
 def _gait_log_line(gait: object, last_gait: Optional[object] = None) -> str:
@@ -1589,6 +1699,41 @@ class RobotSession:
             logging.exception("robot command")
             return False, None, str(exc)
 
+    def get_all_gait_speed_ratios(self) -> Tuple[bool, Optional[object], str]:
+        if not self.connected:
+            return False, None, "Not connected"
+
+        def _do():
+            all_ratios = self.high.get_all_gait_speed_ratio()
+            ratios_map = getattr(all_ratios, "gait_speed_ratios", None)
+            if not _gait_speed_ratio_nonempty(ratios_map):
+                return False, None, "GetAllGaitSpeedRatio failed or empty"
+            summary = _format_all_gait_speed_ratios(all_ratios)
+            return True, all_ratios, summary
+
+        try:
+            return _do()
+        except Exception as exc:
+            logging.exception("robot command")
+            return False, None, str(exc)
+
+    def set_gait_speed_ratio(
+        self,
+        gait: object,
+        straight_ratio: float,
+        turn_ratio: float,
+        lateral_ratio: float,
+    ) -> Tuple[bool, str]:
+        def _do():
+            ratio = magicdog.GaitSpeedRatio()
+            ratio.straight_ratio = float(straight_ratio)
+            ratio.turn_ratio = float(turn_ratio)
+            ratio.lateral_ratio = float(lateral_ratio)
+            st = self.high.set_gait_speed_ratio(gait, ratio)
+            return _status_ok(st), st.message
+
+        return self.run(_do)
+
     def start_joy_loop(self, get_axes: Callable[[], Tuple[float, float, float, float]]) -> None:
         self._stop_joy()
         self.joy_active = True
@@ -1924,6 +2069,9 @@ class RtspStreamStats:
     display_height: int = 0
     stream_fps_hint: float = 0.0
     elapsed_s: float = 0.0
+    detection_mode: str = "off"
+    detection_count: int = 0
+    detection_summary: str = "—"
     _frame_times: List[float] = field(default_factory=list, repr=False)
 
     def summary(self) -> str:
@@ -1938,15 +2086,846 @@ class RtspStreamStats:
             else "—"
         )
         hint = f"{self.stream_fps_hint:.0f}" if self.stream_fps_hint > 0.5 else "—"
+        det_mode = RtspDetectionConfig.label_for(self.detection_mode)
+        det = self.detection_summary if self.detection_mode != "off" else "关闭"
         return (
             f"接收 FPS: {self.fps:5.1f}  |  流标注: {hint}  |  "
             f"帧: {self.frame_count}  |  读失败: {self.drop_count}  |  "
-            f"源分辨率: {src}  |  显示: {disp}  |  时长: {self.elapsed_s:.0f}s"
+            f"源分辨率: {src}  |  显示: {disp}  |  时长: {self.elapsed_s:.0f}s  |  "
+            f"检测[{det_mode}]: {det}"
         )
 
     @staticmethod
     def idle_text() -> str:
-        return "接收 FPS: —  |  流标注: —  |  帧: —  |  读失败: —  |  源分辨率: —  |  显示: —  |  时长: —"
+        return "接收 FPS: —  |  流标注: —  |  帧: —  |  读失败: —  |  源分辨率: —  |  显示: —  |  时长: —  |  检测: —"
+
+
+@dataclass
+class DetectionBox:
+    label: str
+    score: float
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+
+_DETECTION_LABEL_ASCII = {
+    "红色": "Red",
+    "绿色": "Green",
+    "蓝色": "Blue",
+    "人脸": "Face",
+    "运动": "Motion",
+    "行人": "Person",
+    "人体": "Person",
+    "姿态": "Pose",
+    "边缘": "Edge",
+}
+_PIL_OVERLAY_FONT_CACHE: dict[int, "ImageFont.FreeTypeFont | ImageFont.ImageFont"] = {}
+
+
+def _resolve_pil_cjk_font_path() -> str:
+    try:
+        from matplotlib import font_manager as fm
+
+        for name in _CJK_FONT_CANDIDATES:
+            try:
+                path = fm.findfont(name, fallback_to_default=False)
+            except Exception:
+                continue
+            if path and os.path.isfile(path):
+                return path
+        for entry in fm.fontManager.ttflist:
+            if AppTheme._looks_like_cjk_family(entry.name) and os.path.isfile(entry.fname):
+                return entry.fname
+    except Exception:
+        pass
+    for path in (
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+        "C:/Windows/Fonts/msyh.ttc",
+    ):
+        if os.path.isfile(path):
+            return path
+    return ""
+
+
+def _get_pil_overlay_font(size: int = 16):
+    cached = _PIL_OVERLAY_FONT_CACHE.get(size)
+    if cached is not None:
+        return cached
+    path = _resolve_pil_cjk_font_path()
+    if path:
+        try:
+            font = ImageFont.truetype(path, size)
+            _PIL_OVERLAY_FONT_CACHE[size] = font
+            return font
+        except OSError:
+            pass
+    font = ImageFont.load_default()
+    _PIL_OVERLAY_FONT_CACHE[size] = font
+    return font
+
+
+def _detection_overlay_tag(box: DetectionBox, *, ascii_fallback: bool) -> str:
+    label = box.label
+    if ascii_fallback and any(ord(ch) > 127 for ch in label):
+        label = _DETECTION_LABEL_ASCII.get(label, label)
+    if box.score > 0:
+        return f"{label} {box.score:.0%}"
+    return label
+
+
+def _draw_detection_overlays(
+    frame_bgr: np.ndarray,
+    boxes: List[DetectionBox],
+    max_boxes: int,
+    box_color_bgr: Tuple[int, int, int],
+) -> np.ndarray:
+    selected = boxes[:max_boxes]
+    if not selected:
+        return frame_bgr
+
+    out = frame_bgr.copy()
+    for box in selected:
+        cv2.rectangle(out, (box.x1, box.y1), (box.x2, box.y2), box_color_bgr, 2)
+
+    has_cjk = any(any(ord(ch) > 127 for ch in box.label) for box in selected)
+    use_pil = has_cjk and _resolve_pil_cjk_font_path()
+    ascii_fallback = has_cjk and not use_pil
+    tags = [_detection_overlay_tag(box, ascii_fallback=ascii_fallback) for box in selected]
+
+    if not use_pil:
+        for box, tag in zip(selected, tags):
+            cv2.putText(
+                out,
+                tag,
+                (box.x1, max(18, box.y1 - 6)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                box_color_bgr,
+                1,
+                cv2.LINE_AA,
+            )
+        return out
+
+    rgb = (box_color_bgr[2], box_color_bgr[1], box_color_bgr[0])
+    font = _get_pil_overlay_font(16)
+    img = Image.fromarray(cv2.cvtColor(out, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img)
+    for box, tag in zip(selected, tags):
+        x = box.x1
+        y = max(0, box.y1 - 20)
+        bbox = draw.textbbox((x, y), tag, font=font)
+        pad = 2
+        draw.rectangle(
+            (bbox[0] - pad, bbox[1] - pad, bbox[2] + pad, bbox[3] + pad),
+            fill=(0, 0, 0),
+        )
+        draw.text((x, y), tag, font=font, fill=rgb)
+    return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+
+class RtspDetectionConfig:
+    """Thread-safe RTSP overlay detection settings (read from capture thread)."""
+
+    MODES = (
+        "off",
+        "color",
+        "face",
+        "motion",
+        "yolo",
+        "yolo_person",
+        "yolo_pose",
+        "aruco",
+        "edge",
+        "person_dnn",
+    )
+
+    MODE_LABELS = {
+        "off": "关闭",
+        "color": "颜色(红/绿/蓝)",
+        "face": "人脸",
+        "motion": "运动区域",
+        "yolo": "YOLO 通用物品",
+        "yolo_person": "YOLO 行人",
+        "yolo_pose": "YOLO 人体姿态",
+        "aruco": "ArUco 标记",
+        "edge": "轮廓/边缘",
+        "person_dnn": "人体(DNN)",
+    }
+
+    _YOLO_MODES = frozenset({"yolo", "yolo_person", "yolo_pose"})
+
+    def __init__(self, yolo_model: str = "", yolo_pose_model: str = "") -> None:
+        self._lock = threading.Lock()
+        self._mode = "off"
+        self._yolo_model = yolo_model.strip()
+        self._yolo_pose_model = yolo_pose_model.strip()
+
+    def get_mode(self) -> str:
+        with self._lock:
+            return self._mode
+
+    def set_mode(self, mode: str) -> None:
+        mode = mode if mode in self.MODES else "off"
+        with self._lock:
+            self._mode = mode
+
+    def get_yolo_model(self) -> str:
+        with self._lock:
+            return self._yolo_model
+
+    def get_yolo_pose_model(self) -> str:
+        with self._lock:
+            return self._yolo_pose_model
+
+    @classmethod
+    def label_for(cls, mode: str) -> str:
+        return cls.MODE_LABELS.get(mode, mode)
+
+    @classmethod
+    def needs_yolo(cls, mode: str) -> bool:
+        return mode in cls._YOLO_MODES
+
+
+def _viz_nav_models_dir() -> Path:
+    return Path(__file__).resolve().parent / "models"
+
+
+def _resolve_yolo_model_path(explicit: str = "") -> str:
+    if explicit.strip():
+        return explicit.strip()
+    env = os.environ.get("VIZ_NAV_YOLO_MODEL", "").strip()
+    if env:
+        return env
+    local = _viz_nav_models_dir() / "yolov8n.pt"
+    if local.is_file():
+        return str(local)
+    return "yolov8n.pt"
+
+
+def _resolve_yolo_pose_model_path(explicit: str = "") -> str:
+    if explicit.strip():
+        return explicit.strip()
+    env = os.environ.get("VIZ_NAV_YOLO_POSE_MODEL", "").strip()
+    if env:
+        return env
+    local = _viz_nav_models_dir() / "yolov8n-pose.pt"
+    if local.is_file():
+        return str(local)
+    return "yolov8n-pose.pt"
+
+
+def _resolve_person_dnn_paths() -> Tuple[Path, Path]:
+    models = _viz_nav_models_dir()
+    proto = Path(os.environ.get("VIZ_NAV_DNN_PROTOTXT", "").strip() or models / "MobileNetSSD_deploy.prototxt")
+    weights = Path(
+        os.environ.get("VIZ_NAV_DNN_CAFFEMODEL", "").strip() or models / "MobileNetSSD.caffemodel"
+    )
+    return proto, weights
+
+
+_PERSON_DNN_PROTO_URLS = (
+    "https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/MobileNetSSD_deploy.prototxt",
+    "https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/voc/MobileNetSSD_deploy.prototxt",
+)
+_PERSON_DNN_WEIGHTS_URLS = (
+    "https://github.com/Sujan-Roy/Real-Time-Object-detection-with-MobileNet-and-SSD/raw/main/MobileNetSSD_deploy.caffemodel",
+    "https://raw.githubusercontent.com/Sujan-Roy/Real-Time-Object-detection-with-MobileNet-and-SSD/main/MobileNetSSD_deploy.caffemodel",
+)
+_PERSON_DNN_MIN_PROTO_BYTES = 20_000
+_PERSON_DNN_MIN_WEIGHTS_BYTES = 20_000_000
+
+
+def _download_file(url: str, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    logging.info("Downloading %s -> %s", url, dest)
+    urllib.request.urlretrieve(url, tmp)
+    tmp.replace(dest)
+
+
+def _download_first(urls: Tuple[str, ...], dest: Path, min_bytes: int) -> Optional[str]:
+    last_err = ""
+    for url in urls:
+        try:
+            _download_file(url, dest)
+            size = dest.stat().st_size if dest.is_file() else 0
+            if size >= min_bytes:
+                logging.info("Downloaded %s (%d bytes)", dest.name, size)
+                return None
+            last_err = f"{dest.name} 大小异常 ({size} bytes)，可能下载到了 HTML 页面"
+            dest.unlink(missing_ok=True)
+        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+            last_err = str(exc)
+    return last_err or f"无法下载 {dest.name}"
+
+
+def _ensure_person_dnn_files(proto: Path, weights: Path) -> Optional[str]:
+    if proto.is_file() and proto.stat().st_size < _PERSON_DNN_MIN_PROTO_BYTES:
+        proto.unlink(missing_ok=True)
+    if weights.is_file() and weights.stat().st_size < _PERSON_DNN_MIN_WEIGHTS_BYTES:
+        weights.unlink(missing_ok=True)
+    if proto.is_file() and weights.is_file():
+        return None
+    if not proto.is_file():
+        err = _download_first(_PERSON_DNN_PROTO_URLS, proto, _PERSON_DNN_MIN_PROTO_BYTES)
+        if err:
+            return (
+                f"缺少 DNN prototxt，请放到 {proto} 或设置 VIZ_NAV_DNN_PROTOTXT（{err}）"
+            )
+    if not weights.is_file():
+        err = _download_first(_PERSON_DNN_WEIGHTS_URLS, weights, _PERSON_DNN_MIN_WEIGHTS_BYTES)
+        if err:
+            return (
+                f"缺少 DNN caffemodel，请放到 {weights} 或设置 VIZ_NAV_DNN_CAFFEMODEL（{err}）"
+            )
+    if not proto.is_file() or not weights.is_file():
+        return f"缺少 DNN 模型，请放到 {_viz_nav_models_dir()}"
+    return None
+
+
+class RtspFrameDetector:
+    """OpenCV + optional YOLO detectors for RTSP preview overlays."""
+
+    _MIN_COLOR_AREA = 800
+    _MIN_MOTION_AREA = 1200
+    _MIN_EDGE_AREA = 1500
+    _MAX_BOXES = 12
+    _MAX_YOLO_BOXES = 20
+    _MAX_YOLO_GENERAL_BOXES = 30
+    _YOLO_CONF = 0.35
+    _YOLO_GENERAL_CONF = 0.25
+    _YOLO_IMGSZ = 640
+    _YOLO_INFER_EVERY = 4
+    _YOLO_PERSON_CLASS = 0
+    _PERSON_DNN_CONF = 0.35
+    _PERSON_DNN_INFER_EVERY = 2
+    _VOC_PERSON_CLASS = 15
+
+    def __init__(self, yolo_model: str = "", yolo_pose_model: str = "") -> None:
+        self._yolo_general_path = _resolve_yolo_model_path(yolo_model)
+        self._yolo_pose_path = _resolve_yolo_pose_model_path(yolo_pose_model)
+        self._face_cascade = None
+        self._motion_bg = None
+        self._yolo_cache: dict[str, object] = {}
+        self._yolo_errors: dict[str, str] = {}
+        self._yolo_model_tasks: dict[str, str] = {}
+        self._yolo_infer_counters: dict[str, int] = defaultdict(int)
+        self._yolo_last_boxes: dict[str, List[DetectionBox]] = defaultdict(list)
+        self._yolo_pose_last_frame: Optional[np.ndarray] = None
+        self._aruco_last_frame: Optional[np.ndarray] = None
+        self._person_dnn_net = None
+        self._person_dnn_error = ""
+        self._person_dnn_use_hog = False
+        self._person_dnn_last_boxes: List[DetectionBox] = []
+        self._person_dnn_frame_counter = 0
+        self._person_hog = None
+        self._last_summary = "—"
+        self._last_count = 0
+        self._active_yolo_slot = ""
+
+    @staticmethod
+    def _yolo_slot(mode_key: str, model_path: str) -> str:
+        """Isolate YOLO instances: ultralytics predictor keeps classes filter across calls."""
+        return f"{mode_key}::{model_path}"
+
+    @property
+    def last_summary(self) -> str:
+        return self._last_summary
+
+    @property
+    def last_count(self) -> int:
+        return self._last_count
+
+    def _yolo_error(self, slot: str) -> str:
+        return self._yolo_errors.get(slot, "")
+
+    def _face_detector(self):
+        if self._face_cascade is None and _HAS_RTSP_DEPS:
+            path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            self._face_cascade = cv2.CascadeClassifier(path)
+        return self._face_cascade
+
+    def process(self, frame_bgr: np.ndarray, mode: str) -> Tuple[np.ndarray, List[DetectionBox]]:
+        if not _HAS_RTSP_DEPS or mode == "off":
+            self._last_summary = "关闭"
+            self._last_count = 0
+            return frame_bgr, []
+
+        boxes: List[DetectionBox] = []
+        max_boxes = self._MAX_BOXES
+        box_color = (0, 220, 255)
+        frame_vis = frame_bgr
+        skip_box_overlay = False
+
+        if mode == "color":
+            boxes = self._detect_colors(frame_bgr)
+        elif mode == "face":
+            boxes = self._detect_faces(frame_bgr)
+        elif mode == "motion":
+            boxes = self._detect_motion(frame_bgr)
+        elif mode == "yolo":
+            boxes = self._detect_yolo(frame_bgr, self._yolo_general_path)
+            max_boxes = self._MAX_YOLO_GENERAL_BOXES
+            box_color = (80, 255, 120)
+        elif mode == "yolo_person":
+            boxes = self._detect_yolo_person(frame_bgr)
+            max_boxes = self._MAX_YOLO_BOXES
+            box_color = (0, 180, 255)
+        elif mode == "yolo_pose":
+            frame_vis, boxes = self._detect_yolo_pose(frame_bgr)
+            max_boxes = self._MAX_YOLO_BOXES
+            skip_box_overlay = True
+        elif mode == "aruco":
+            frame_vis, boxes = self._detect_aruco(frame_bgr)
+            max_boxes = self._MAX_YOLO_BOXES
+            box_color = (255, 100, 255)
+            skip_box_overlay = True
+        elif mode == "edge":
+            boxes = self._detect_edges(frame_bgr)
+            box_color = (180, 180, 180)
+        elif mode == "person_dnn":
+            boxes = self._detect_person_dnn(frame_bgr)
+            max_boxes = self._MAX_YOLO_BOXES
+            box_color = (0, 140, 255)
+
+        if skip_box_overlay:
+            out = frame_vis
+        else:
+            out = _draw_detection_overlays(frame_vis, boxes, max_boxes, box_color)
+
+        self._last_count = len(boxes)
+        if boxes:
+            parts: dict[str, int] = {}
+            for b in boxes:
+                parts[b.label] = parts.get(b.label, 0) + 1
+            summary = ", ".join(f"{k}×{v}" for k, v in parts.items())
+            if mode == "person_dnn" and self._person_dnn_use_hog:
+                summary += " [HOG]"
+            self._last_summary = summary
+        elif mode in RtspDetectionConfig._YOLO_MODES:
+            slot = self._active_yolo_slot
+            if not slot and mode == "yolo_pose":
+                slot = self._yolo_slot("pose", self._yolo_pose_path)
+            elif not slot:
+                slot = self._yolo_slot(
+                    "general" if mode == "yolo" else mode.removeprefix("yolo_"),
+                    self._yolo_general_path if mode != "yolo_pose" else self._yolo_pose_path,
+                )
+            err = self._yolo_error(slot)
+            if err:
+                self._last_summary = f"YOLO 不可用: {err}"
+            else:
+                self._last_summary = "无目标"
+        elif mode == "person_dnn" and self._person_dnn_error:
+            self._last_summary = f"DNN 不可用: {self._person_dnn_error}"
+        elif mode == "person_dnn" and self._person_dnn_use_hog:
+            self._last_summary = "无目标 (HOG fallback)"
+        else:
+            self._last_summary = "无目标"
+        return out, boxes
+
+    def _detect_colors(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
+        hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+        specs = [
+            ("红色", [((0, 100, 80), (10, 255, 255)), ((160, 100, 80), (179, 255, 255))]),
+            ("绿色", [((35, 60, 60), (85, 255, 255))]),
+            ("蓝色", [((100, 80, 60), (130, 255, 255))]),
+        ]
+        boxes: List[DetectionBox] = []
+        for label, ranges in specs:
+            mask = None
+            for lo, hi in ranges:
+                part = cv2.inRange(hsv, np.array(lo, np.uint8), np.array(hi, np.uint8))
+                mask = part if mask is None else cv2.bitwise_or(mask, part)
+            if mask is None:
+                continue
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                if area < self._MIN_COLOR_AREA:
+                    continue
+                x, y, w, h = cv2.boundingRect(cnt)
+                score = min(1.0, area / 8000.0)
+                boxes.append(DetectionBox(label, score, x, y, x + w, y + h))
+        boxes.sort(key=lambda b: (b.x2 - b.x1) * (b.y2 - b.y1), reverse=True)
+        return boxes[: self._MAX_BOXES]
+
+    def _detect_faces(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
+        cascade = self._face_detector()
+        if cascade is None or cascade.empty():
+            self._last_summary = "人脸模型不可用"
+            return []
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(48, 48))
+        boxes: List[DetectionBox] = []
+        for x, y, w, h in faces:
+            boxes.append(DetectionBox("人脸", 0.85, int(x), int(y), int(x + w), int(y + h)))
+        return boxes[: self._MAX_BOXES]
+
+    def _detect_motion(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
+        if self._motion_bg is None:
+            self._motion_bg = cv2.createBackgroundSubtractorMOG2(history=120, varThreshold=32)
+        fg = self._motion_bg.apply(frame_bgr)
+        fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        contours, _ = cv2.findContours(fg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        boxes: List[DetectionBox] = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < self._MIN_MOTION_AREA:
+                continue
+            x, y, w, h = cv2.boundingRect(cnt)
+            score = min(1.0, area / 12000.0)
+            boxes.append(DetectionBox("运动", score, x, y, x + w, y + h))
+        boxes.sort(key=lambda b: (b.x2 - b.x1) * (b.y2 - b.y1), reverse=True)
+        return boxes[: self._MAX_BOXES]
+
+    def _detect_edges(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(blurred, 60, 160)
+        edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        boxes: List[DetectionBox] = []
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < self._MIN_EDGE_AREA:
+                continue
+            x, y, w, h = cv2.boundingRect(cnt)
+            score = min(1.0, area / 15000.0)
+            boxes.append(DetectionBox("边缘", score, x, y, x + w, y + h))
+        boxes.sort(key=lambda b: (b.x2 - b.x1) * (b.y2 - b.y1), reverse=True)
+        return boxes[: self._MAX_BOXES]
+
+    def _detect_aruco(self, frame_bgr: np.ndarray) -> Tuple[np.ndarray, List[DetectionBox]]:
+        if not hasattr(cv2, "aruco"):
+            self._last_summary = "OpenCV 无 aruco 模块"
+            return frame_bgr, []
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        corners, ids = None, None
+        try:
+            params = cv2.aruco.DetectorParameters()
+            detector = cv2.aruco.ArucoDetector(dictionary, params)
+            corners, ids, _ = detector.detectMarkers(gray)
+        except AttributeError:
+            corners, ids, _ = cv2.aruco.detectMarkers(gray, dictionary)
+        out = frame_bgr.copy()
+        boxes: List[DetectionBox] = []
+        if ids is not None and len(ids) > 0:
+            try:
+                cv2.aruco.drawDetectedMarkers(out, corners, ids)
+            except Exception:
+                pass
+            for idx, marker_id in enumerate(ids.flatten()):
+                pts = corners[idx][0]
+                x1 = int(pts[:, 0].min())
+                y1 = int(pts[:, 1].min())
+                x2 = int(pts[:, 0].max())
+                y2 = int(pts[:, 1].max())
+                boxes.append(DetectionBox(f"ArUco#{int(marker_id)}", 0.95, x1, y1, x2, y2))
+        self._aruco_last_frame = out
+        return out, boxes[: self._MAX_YOLO_BOXES]
+
+    def _ensure_yolo_at(
+        self,
+        model_path: str,
+        mode_key: str,
+        expected_task: Optional[str] = None,
+    ) -> Optional[str]:
+        """Load YOLO for a dedicated mode slot; returns slot id or None on failure."""
+        slot = self._yolo_slot(mode_key, model_path)
+        self._active_yolo_slot = slot
+        if not _HAS_YOLO or _UltralyticsYOLO is None:
+            self._yolo_errors[slot] = "未安装 ultralytics（pip install ultralytics）"
+            return None
+        if slot in self._yolo_cache:
+            task = self._yolo_model_tasks.get(slot, "detect")
+            if expected_task and task != expected_task:
+                self._yolo_errors[slot] = (
+                    f"模型 {Path(model_path).name} 为 {task} 任务，"
+                    f"当前模式需要 {expected_task} 模型"
+                )
+                return None
+            return slot
+        if slot in self._yolo_errors and self._yolo_errors[slot]:
+            return None
+        try:
+            logging.info("Loading YOLO model [%s]: %s", mode_key, model_path)
+            model = _UltralyticsYOLO(model_path)
+            task = str(getattr(model, "task", "detect") or "detect")
+            self._yolo_model_tasks[slot] = task
+            if expected_task and task != expected_task:
+                hint = (
+                    "通用物品需 yolov8n.pt (detect)，"
+                    "若误用 yolov8n-pose.pt 通常只能检出人"
+                )
+                self._yolo_errors[slot] = (
+                    f"模型 {Path(model_path).name} 为 {task} 任务，需要 {expected_task}。{hint}"
+                )
+                return None
+            self._yolo_cache[slot] = model
+            logging.info("YOLO model loaded [%s]: %s task=%s", mode_key, model_path, task)
+            return slot
+        except Exception as exc:
+            self._yolo_errors[slot] = str(exc)
+            logging.exception("YOLO model load failed [%s]: %s", mode_key, model_path)
+            return None
+
+    def _predict_yolo_boxes(
+        self,
+        frame_bgr: np.ndarray,
+        model_path: str,
+        *,
+        mode_key: str,
+        classes: Optional[List[int]] = None,
+        label: Optional[str] = None,
+        conf: Optional[float] = None,
+        max_boxes: Optional[int] = None,
+        max_det: Optional[int] = None,
+        expected_task: Optional[str] = None,
+    ) -> List[DetectionBox]:
+        cache_key = f"{mode_key}|{model_path}"
+        if classes is not None:
+            cache_key += f"|{'-'.join(map(str, classes))}"
+        self._yolo_infer_counters[cache_key] += 1
+        cached = self._yolo_last_boxes.get(cache_key, [])
+        if (
+            self._yolo_infer_counters[cache_key] % self._YOLO_INFER_EVERY != 0
+            and cached
+        ):
+            return list(cached)
+
+        slot = self._ensure_yolo_at(model_path, mode_key, expected_task=expected_task)
+        if slot is None:
+            self._yolo_last_boxes[cache_key] = []
+            return []
+
+        predict_kwargs = {
+            "verbose": False,
+            "conf": self._YOLO_CONF if conf is None else conf,
+            "imgsz": self._YOLO_IMGSZ,
+            "device": "cpu",
+        }
+        if classes is not None:
+            predict_kwargs["classes"] = classes
+        if max_det is not None:
+            predict_kwargs["max_det"] = max_det
+
+        try:
+            results = self._yolo_cache[slot].predict(frame_bgr, **predict_kwargs)
+        except Exception as exc:
+            self._yolo_errors[slot] = str(exc)
+            self._yolo_last_boxes[cache_key] = []
+            return []
+
+        boxes: List[DetectionBox] = []
+        for result in results:
+            names = result.names or {}
+            if result.boxes is None:
+                continue
+            for box in result.boxes:
+                cls_id = int(box.cls[0])
+                box_label = label or str(names.get(cls_id, cls_id))
+                score = float(box.conf[0])
+                x1, y1, x2, y2 = (int(v) for v in box.xyxy[0].tolist())
+                boxes.append(DetectionBox(box_label, score, x1, y1, x2, y2))
+        limit = max_boxes if max_boxes is not None else self._MAX_YOLO_BOXES
+        boxes.sort(key=lambda b: b.score, reverse=True)
+        self._yolo_last_boxes[cache_key] = boxes[:limit]
+        return self._yolo_last_boxes[cache_key]
+
+    def _detect_yolo(self, frame_bgr: np.ndarray, model_path: str) -> List[DetectionBox]:
+        return self._predict_yolo_boxes(
+            frame_bgr,
+            model_path,
+            mode_key="general",
+            conf=self._YOLO_GENERAL_CONF,
+            max_boxes=self._MAX_YOLO_GENERAL_BOXES,
+            max_det=50,
+            expected_task="detect",
+        )
+
+    def _detect_yolo_person(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
+        return self._predict_yolo_boxes(
+            frame_bgr,
+            self._yolo_general_path,
+            mode_key="person",
+            classes=[self._YOLO_PERSON_CLASS],
+            label="行人",
+            expected_task="detect",
+        )
+
+    def _detect_yolo_pose(self, frame_bgr: np.ndarray) -> Tuple[np.ndarray, List[DetectionBox]]:
+        model_path = self._yolo_pose_path
+        mode_key = "pose"
+        cache_key = f"{mode_key}|{model_path}"
+        self._yolo_infer_counters[cache_key] += 1
+        if self._yolo_infer_counters[cache_key] % self._YOLO_INFER_EVERY != 0:
+            if self._yolo_pose_last_frame is not None:
+                return self._yolo_pose_last_frame, list(self._yolo_last_boxes[cache_key])
+
+        slot = self._ensure_yolo_at(model_path, mode_key, expected_task="pose")
+        if slot is None:
+            self._yolo_pose_last_frame = None
+            self._yolo_last_boxes[cache_key] = []
+            return frame_bgr, []
+
+        try:
+            results = self._yolo_cache[slot].predict(
+                frame_bgr,
+                verbose=False,
+                conf=self._YOLO_CONF,
+                imgsz=self._YOLO_IMGSZ,
+                device="cpu",
+            )
+        except Exception as exc:
+            self._yolo_errors[slot] = str(exc)
+            self._yolo_pose_last_frame = None
+            self._yolo_last_boxes[cache_key] = []
+            return frame_bgr, []
+
+        boxes: List[DetectionBox] = []
+        out = frame_bgr
+        for result in results:
+            try:
+                out = result.plot()
+            except Exception:
+                out = frame_bgr.copy()
+            if result.boxes is not None:
+                for box in result.boxes:
+                    score = float(box.conf[0])
+                    x1, y1, x2, y2 = (int(v) for v in box.xyxy[0].tolist())
+                    boxes.append(DetectionBox("姿态", score, x1, y1, x2, y2))
+        boxes.sort(key=lambda b: b.score, reverse=True)
+        self._yolo_last_boxes[cache_key] = boxes[: self._MAX_YOLO_BOXES]
+        self._yolo_pose_last_frame = out
+        return out, self._yolo_last_boxes[cache_key]
+
+    def _ensure_person_dnn(self) -> bool:
+        if self._person_dnn_net is not None:
+            return True
+        if self._person_dnn_use_hog:
+            return True
+        if self._person_dnn_error:
+            return False
+        proto, weights = _resolve_person_dnn_paths()
+        missing = _ensure_person_dnn_files(proto, weights)
+        if missing:
+            logging.warning("Person DNN unavailable: %s", missing)
+            self._person_dnn_use_hog = True
+            return True
+        try:
+            net = cv2.dnn.readNetFromCaffe(str(proto), str(weights))
+            net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+            net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+            self._person_dnn_net = net
+            self._person_dnn_use_hog = False
+            logging.info("Person DNN loaded: %s + %s", proto.name, weights.name)
+            return True
+        except Exception as exc:
+            logging.warning("Person DNN load failed, using HOG fallback: %s", exc)
+            self._person_dnn_error = str(exc)
+            self._person_dnn_use_hog = True
+            return True
+
+    def _person_hog_detector(self):
+        if self._person_hog is None and _HAS_RTSP_DEPS:
+            hog = cv2.HOGDescriptor()
+            hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+            self._person_hog = hog
+        return self._person_hog
+
+    def _detect_person_hog(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
+        hog = self._person_hog_detector()
+        if hog is None:
+            return []
+        rects, weights = hog.detectMultiScale(
+            frame_bgr,
+            winStride=(8, 8),
+            padding=(16, 16),
+            scale=1.05,
+        )
+        boxes: List[DetectionBox] = []
+        for (x, y, w, h), score in zip(rects, weights):
+            boxes.append(DetectionBox("人体", float(score), int(x), int(y), int(x + w), int(y + h)))
+        boxes.sort(key=lambda b: b.score, reverse=True)
+        return boxes[: self._MAX_YOLO_BOXES]
+
+    def _detect_person_dnn(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
+        self._person_dnn_frame_counter += 1
+        if self._person_dnn_frame_counter % self._PERSON_DNN_INFER_EVERY != 0:
+            return list(self._person_dnn_last_boxes)
+
+        if not self._ensure_person_dnn():
+            self._person_dnn_last_boxes = []
+            return []
+
+        if self._person_dnn_use_hog or self._person_dnn_net is None:
+            self._person_dnn_last_boxes = self._detect_person_hog(frame_bgr)
+            return self._person_dnn_last_boxes
+
+        h, w = frame_bgr.shape[:2]
+        blob = cv2.dnn.blobFromImage(
+            cv2.resize(frame_bgr, (300, 300)),
+            scalefactor=1.0 / 127.5,
+            size=(300, 300),
+            mean=(127.5, 127.5, 127.5),
+            swapRB=True,
+            crop=False,
+        )
+        try:
+            self._person_dnn_net.setInput(blob)
+            detections = self._person_dnn_net.forward()
+        except Exception as exc:
+            logging.warning("Person DNN infer failed, switching to HOG: %s", exc)
+            self._person_dnn_error = str(exc)
+            self._person_dnn_net = None
+            self._person_dnn_use_hog = True
+            self._person_dnn_last_boxes = self._detect_person_hog(frame_bgr)
+            return self._person_dnn_last_boxes
+
+        boxes: List[DetectionBox] = []
+        if detections.ndim == 4 and detections.shape[2] > 0:
+            for i in range(detections.shape[2]):
+                confidence = float(detections[0, 0, i, 2])
+                class_id = int(detections[0, 0, i, 1])
+                if confidence < self._PERSON_DNN_CONF or class_id != self._VOC_PERSON_CLASS:
+                    continue
+                x1 = int(detections[0, 0, i, 3] * w)
+                y1 = int(detections[0, 0, i, 4] * h)
+                x2 = int(detections[0, 0, i, 5] * w)
+                y2 = int(detections[0, 0, i, 6] * h)
+                x1 = max(0, min(x1, w - 1))
+                y1 = max(0, min(y1, h - 1))
+                x2 = max(0, min(x2, w))
+                y2 = max(0, min(y2, h))
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                boxes.append(DetectionBox("人体", confidence, x1, y1, x2, y2))
+        boxes.sort(key=lambda b: b.score, reverse=True)
+        self._person_dnn_last_boxes = boxes[: self._MAX_YOLO_BOXES]
+        return self._person_dnn_last_boxes
+
+    def reset(self) -> None:
+        self._motion_bg = None
+        self._yolo_infer_counters.clear()
+        self._yolo_last_boxes.clear()
+        self._yolo_pose_last_frame = None
+        self._aruco_last_frame = None
+        self._person_dnn_frame_counter = 0
+        self._person_dnn_last_boxes = []
+        self._person_dnn_error = ""
+        self._person_dnn_use_hog = False
+        self._active_yolo_slot = ""
+        self._last_summary = "—"
+        self._last_count = 0
 
 
 def _parse_rtsp_url(url: str) -> Tuple[str, int, str]:
@@ -2051,6 +3030,7 @@ class RtspPlayer:
         max_width: int = 960,
         on_stats: Optional[Callable[[RtspStreamStats], None]] = None,
         on_failed: Optional[Callable[[str], None]] = None,
+        detection_config: Optional[RtspDetectionConfig] = None,
     ) -> None:
         self.root = root
         self.label = label
@@ -2058,6 +3038,11 @@ class RtspPlayer:
         self._max_width = max_width
         self._on_stats = on_stats
         self._on_failed = on_failed
+        self._detection_config = detection_config or RtspDetectionConfig()
+        self._detector = RtspFrameDetector(
+            self._detection_config.get_yolo_model(),
+            self._detection_config.get_yolo_pose_model(),
+        )
         self._stats = RtspStreamStats()
         self._stats_lock = threading.Lock()
         self._lifecycle_lock = threading.Lock()
@@ -2096,7 +3081,14 @@ class RtspPlayer:
     def _reset_stats(self) -> None:
         with self._stats_lock:
             self._stats = RtspStreamStats()
+        self._detector.reset()
         self._emit_stats()
+
+    def _record_detection(self, mode: str, count: int, summary: str) -> None:
+        with self._stats_lock:
+            self._stats.detection_mode = mode
+            self._stats.detection_count = count
+            self._stats.detection_summary = summary
 
     def _emit_stats(self) -> None:
         if self._on_stats:
@@ -2165,6 +3157,9 @@ class RtspPlayer:
             self._stop_locked()
         self.root.after(0, self._clear_frame)
 
+    def reset_detection(self) -> None:
+        self._detector.reset()
+
     def _clear_frame(self) -> None:
         self._photo = None
         self.label.configure(image="", text="No stream", fg="#94a3b8", bg="#0f172a")
@@ -2215,8 +3210,13 @@ class RtspPlayer:
                     continue
                 last_ui = now
                 try:
-                    src_h, src_w = frame.shape[:2]
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    det_mode = self._detection_config.get_mode()
+                    frame_vis, _boxes = self._detector.process(frame, det_mode)
+                    self._record_detection(
+                        det_mode, self._detector.last_count, self._detector.last_summary
+                    )
+                    src_h, src_w = frame_vis.shape[:2]
+                    frame_rgb = cv2.cvtColor(frame_vis, cv2.COLOR_BGR2RGB)
                     img = Image.fromarray(frame_rgb)
                     w, h = img.size
                     if w > self._max_width:
@@ -2283,10 +3283,16 @@ class NavVizApp:
         default_robot_ip: str,
         rtsp_port: int = 8082,
         rtsp_path: str = "",
+        yolo_model: str = "",
+        yolo_pose_model: str = "",
     ) -> None:
         self.rtsp_port = rtsp_port
         self.rtsp_path = rtsp_path.strip()
         self._rtsp_start_pending_log = False
+        self.rtsp_detection_config = RtspDetectionConfig(
+            yolo_model=yolo_model,
+            yolo_pose_model=yolo_pose_model,
+        )
         self.default_robot_ip = default_robot_ip
         self.session = RobotSession()
         self.root = tk.Tk()
@@ -2601,6 +3607,68 @@ class NavVizApp:
             gf, _choice_desc(GAIT_CHOICES, GAIT_CHOICES[0][0])
         )
         self.gait_var.trace_add("write", self._on_gait_selected)
+
+        sf = ttk.LabelFrame(tab, text=" Gait speed ratio ")
+        sf.pack(fill=tk.X, padx=t.PAD_FRAME, pady=t.PAD_ROW)
+        speed_gait_row = ttk.Frame(sf, style="Card.TFrame")
+        speed_gait_row.pack(fill=tk.X, padx=t.PAD_ROW, pady=(t.PAD_ROW, t.PAD_ROW))
+        self.gait_speed_gait_var = tk.StringVar(value=GAIT_SPEED_RATIO_CHOICES[1][0])
+        speed_gait_cb = ttk.Combobox(
+            speed_gait_row,
+            textvariable=self.gait_speed_gait_var,
+            values=[n for n, _, _ in GAIT_SPEED_RATIO_CHOICES],
+            state="readonly",
+            width=42,
+        )
+        speed_gait_cb.pack(side=tk.LEFT, padx=(0, 8))
+        speed_gait_cb.bind("<<ComboboxSelected>>", self._on_gait_speed_gait_selected)
+        ttk.Button(
+            speed_gait_row,
+            text="Get all ratios",
+            command=self._wrap_action("Get all gait speed ratios", self._on_get_all_gait_speed_ratios),
+        ).pack(side=tk.LEFT, padx=4)
+        ttk.Button(
+            speed_gait_row,
+            text="Set ratio",
+            style="Accent.TButton",
+            command=self._wrap_action("Set gait speed ratio", self._on_set_gait_speed_ratio),
+        ).pack(side=tk.LEFT, padx=4)
+
+        speed_fields = ttk.Frame(sf, style="Card.TFrame")
+        speed_fields.pack(fill=tk.X, padx=t.PAD_ROW, pady=(0, t.PAD_ROW))
+        self.gait_speed_straight_var = tk.DoubleVar(value=0.65)
+        self.gait_speed_turn_var = tk.DoubleVar(value=0.20)
+        self.gait_speed_lateral_var = tk.DoubleVar(value=0.30)
+        for col, (lbl, var, hint) in enumerate(
+            [
+                ("Straight", self.gait_speed_straight_var, "前进"),
+                ("Turn", self.gait_speed_turn_var, "转向"),
+                ("Lateral", self.gait_speed_lateral_var, "侧移"),
+            ]
+        ):
+            ttk.Label(speed_fields, text=f"{lbl}", style="CardMuted.TLabel").grid(
+                row=0, column=col * 3, padx=(0 if col == 0 else 12, 2), sticky=tk.E
+            )
+            ttk.Entry(speed_fields, textvariable=var, width=8).grid(row=0, column=col * 3 + 1, padx=2)
+            ttk.Label(speed_fields, text=hint, style="CardMuted.TLabel").grid(
+                row=0, column=col * 3 + 2, padx=(0, 4), sticky=tk.W
+            )
+        ttk.Label(speed_fields, text="(0–1)", style="CardMuted.TLabel").grid(row=0, column=9, padx=4)
+
+        speed_status_row = ttk.Frame(sf, style="Card.TFrame")
+        speed_status_row.pack(fill=tk.X, padx=t.PAD_ROW, pady=(0, t.PAD_ROW))
+        self.gait_speed_status_label = ttk.Label(
+            speed_status_row,
+            text="速度比例：— （连接后点击 Get all ratios 查询）",
+            style="StatusIdle.TLabel",
+            wraplength=t.INFO_WRAP,
+        )
+        self.gait_speed_status_label.pack(anchor=tk.W)
+        self.gait_speed_desc_label = self.theme.info_box(
+            sf, _choice_desc(GAIT_SPEED_RATIO_CHOICES, GAIT_SPEED_RATIO_CHOICES[1][0])
+        )
+        self.gait_speed_gait_var.trace_add("write", self._on_gait_speed_gait_selected)
+        self._cached_all_gait_speed_ratios: Optional[object] = None
 
         tf = ttk.LabelFrame(tab, text=" Trick ")
         tf.pack(fill=tk.X, padx=t.PAD_FRAME, pady=t.PAD_ROW)
@@ -3930,6 +4998,35 @@ class NavVizApp:
         self.rtsp_status_label = ttk.Label(btn_row, text="未连接 RTSP", style="CardMuted.TLabel")
         self.rtsp_status_label.pack(side=tk.LEFT, padx=4)
 
+        det_row = ttk.Frame(ctrl, style="Card.TFrame")
+        det_row.pack(fill=tk.X, padx=t.PAD_INNER, pady=(0, t.PAD_INNER))
+        ttk.Label(det_row, text="图像检测", style="CardMuted.TLabel").pack(side=tk.LEFT)
+        self.rtsp_detection_var = tk.StringVar(value="off")
+        det_choices = [
+            (mid, RtspDetectionConfig.label_for(mid))
+            for mid in RtspDetectionConfig.MODES
+        ]
+        self.rtsp_detection_combo = ttk.Combobox(
+            det_row,
+            textvariable=self.rtsp_detection_var,
+            values=[label for _mid, label in det_choices],
+            state="readonly",
+            width=22,
+        )
+        self.rtsp_detection_combo.pack(side=tk.LEFT, padx=8)
+        self._rtsp_detection_mode_by_label = {label: mid for mid, label in det_choices}
+        self._rtsp_detection_label_by_mode = {mid: label for mid, label in det_choices}
+        self.rtsp_detection_combo.set(self._rtsp_detection_label_by_mode["off"])
+        self.rtsp_detection_combo.bind(
+            "<<ComboboxSelected>>", self._on_rtsp_detection_mode_changed
+        )
+        self.rtsp_detection_hint = ttk.Label(
+            det_row,
+            text=self._rtsp_detection_hint_text(),
+            style="CardMuted.TLabel",
+        )
+        self.rtsp_detection_hint.pack(side=tk.LEFT, padx=4)
+
         body = ttk.Frame(tab)
         body.pack(fill=tk.BOTH, expand=True, padx=t.PAD_FRAME, pady=(0, t.PAD_TAB))
         paned = tk.PanedWindow(body, orient=tk.HORIZONTAL)
@@ -3980,6 +5077,7 @@ class NavVizApp:
             self._log,
             on_stats=self._on_rtsp_stats,
             on_failed=self._on_rtsp_open_failed,
+            detection_config=self.rtsp_detection_config,
         )
 
         self._build_video_joy_panel(joy_wrap)
@@ -4113,6 +5211,32 @@ class NavVizApp:
     def _on_rtsp_sync_ip(self) -> None:
         self.rtsp_url_var.set(self._default_rtsp_url())
         self._log_action("同步机器人 IP", True, self.rtsp_url_var.get())
+
+    def _rtsp_detection_hint_text(self) -> str:
+        yolo_note = "YOLO/姿态需 ultralytics" if _HAS_YOLO else "YOLO需 ultralytics"
+        return (
+            "通用/行人需 yolov8n.pt(detect)，姿态需 yolov8n-pose.pt；"
+            f"{yolo_note}；人体DNN 模型见 viz_nav/models/（失败时自动 HOG）"
+        )
+
+    def _on_rtsp_detection_mode_changed(self, _event=None) -> None:
+        label = self.rtsp_detection_var.get()
+        mode = self._rtsp_detection_mode_by_label.get(label, "off")
+        if RtspDetectionConfig.needs_yolo(mode) and not _HAS_YOLO:
+            self._log_action(
+                "RTSP 检测",
+                False,
+                "YOLO 需安装 ultralytics: pip install ultralytics",
+            )
+        self.rtsp_detection_config.set_mode(mode)
+        if hasattr(self, "rtsp_player"):
+            self.rtsp_player.reset_detection()
+        self._refresh_rtsp_stats_label()
+        self._log_action(
+            "RTSP 检测",
+            True,
+            RtspDetectionConfig.label_for(mode),
+        )
 
     def _on_rtsp_start(self) -> None:
         if not hasattr(self, "rtsp_player"):
@@ -4271,6 +5395,84 @@ class NavVizApp:
             self._log_action("Get gait", False, "请先 Connect")
             return
         self._refresh_gait_current_ui()
+
+    def _gait_speed_ratio_value(self):
+        return _choice_value(GAIT_SPEED_RATIO_CHOICES, self.gait_speed_gait_var.get())
+
+    def _apply_gait_speed_ratio_fields(self, gait: object) -> bool:
+        cached = self._cached_all_gait_speed_ratios
+        if cached is None:
+            return False
+        ratios_map = getattr(cached, "gait_speed_ratios", None)
+        ratio = _gait_speed_ratio_lookup(ratios_map, gait)
+        if ratio is None:
+            return False
+        self.gait_speed_straight_var.set(ratio.straight_ratio)
+        self.gait_speed_turn_var.set(ratio.turn_ratio)
+        self.gait_speed_lateral_var.set(ratio.lateral_ratio)
+        return True
+
+    def _on_gait_speed_gait_selected(self, _event=None) -> None:
+        label = self.gait_speed_gait_var.get()
+        self.gait_speed_desc_label.config(text=_choice_desc(GAIT_SPEED_RATIO_CHOICES, label))
+        gait = self._gait_speed_ratio_value()
+        if self._apply_gait_speed_ratio_fields(gait):
+            ratio = magicdog.GaitSpeedRatio()
+            ratio.straight_ratio = self.gait_speed_straight_var.get()
+            ratio.turn_ratio = self.gait_speed_turn_var.get()
+            ratio.lateral_ratio = self.gait_speed_lateral_var.get()
+            detail = f"{_gait_enum_short_name(gait)} {_format_gait_speed_ratio(ratio)}"
+            self.gait_speed_status_label.config(
+                text=f"已载入 {detail}",
+                style="StatusOk.TLabel",
+            )
+
+    def _on_get_all_gait_speed_ratios(self) -> None:
+        ok, all_ratios, summary = self.session.get_all_gait_speed_ratios()
+        if ok and all_ratios is not None:
+            self._cached_all_gait_speed_ratios = all_ratios
+            self.gait_speed_status_label.config(
+                text=f"全部比例：{summary}",
+                style="StatusOk.TLabel",
+            )
+            self._apply_gait_speed_ratio_fields(self._gait_speed_ratio_value())
+            self._log_action("Get all gait speed ratios", True, summary)
+        else:
+            self.gait_speed_status_label.config(
+                text=f"查询失败 — {summary or 'unknown error'}",
+                style="StatusBad.TLabel",
+            )
+            self._log_action("Get all gait speed ratios", False, summary)
+
+    def _on_set_gait_speed_ratio(self) -> None:
+        gait = self._gait_speed_ratio_value()
+        try:
+            straight = float(self.gait_speed_straight_var.get())
+            turn = float(self.gait_speed_turn_var.get())
+            lateral = float(self.gait_speed_lateral_var.get())
+        except tk.TclError:
+            self._log_action("Set gait speed ratio", False, "比例需为数字")
+            return
+        ok, msg = self.session.set_gait_speed_ratio(gait, straight, turn, lateral)
+        detail = (
+            f"{_gait_enum_short_name(gait)} "
+            f"fwd={straight:.2f} turn={turn:.2f} lat={lateral:.2f}"
+        )
+        if ok:
+            self.gait_speed_status_label.config(
+                text=f"已设置 {detail}",
+                style="StatusOk.TLabel",
+            )
+            self._log_action("Set gait speed ratio", True, detail)
+            refresh_ok, all_ratios, _ = self.session.get_all_gait_speed_ratios()
+            if refresh_ok and all_ratios is not None:
+                self._cached_all_gait_speed_ratios = all_ratios
+        else:
+            self.gait_speed_status_label.config(
+                text=f"设置失败 — {msg or 'unknown error'}",
+                style="StatusBad.TLabel",
+            )
+            self._log_action("Set gait speed ratio", False, msg)
 
     def _on_trick(self) -> None:
         ok, msg = self.session.execute_trick(self._trick_value())
@@ -4661,12 +5863,24 @@ def main() -> None:
         default="",
         help="RTSP path suffix on Video tab, e.g. /stream",
     )
+    parser.add_argument(
+        "--yolo-model",
+        default="",
+        help="YOLO weights path (default yolov8n.pt or VIZ_NAV_YOLO_MODEL)",
+    )
+    parser.add_argument(
+        "--yolo-pose-model",
+        default="",
+        help="YOLO pose weights (default yolov8n-pose.pt or VIZ_NAV_YOLO_POSE_MODEL)",
+    )
     args = parser.parse_args()
     app = NavVizApp(
         args.local_ip,
         args.robot_ip,
         rtsp_port=args.rtsp_port,
         rtsp_path=args.rtsp_path,
+        yolo_model=args.yolo_model,
+        yolo_pose_model=args.yolo_pose_model,
     )
     app.run()
 
