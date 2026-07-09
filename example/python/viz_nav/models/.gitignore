@@ -1,0 +1,4 @@
+# Detection model weights (YOLO .pt, MobileNet-SSD, etc.) — download locally, do not commit.
+*
+!.gitignore
+!.gitkeep

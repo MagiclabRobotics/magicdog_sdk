@@ -4,4 +4,6 @@ opencv-python>=4.5
 Pillow>=9.0
 # Optional: YOLO detection on Video tab (general / person / pose)
 ultralytics>=8.0.0
-# Person DNN uses MobileNet-SSD Caffe files in viz_nav/models/ (auto-download on first use)
+# Optional: OCR on Video tab (Chinese + English)
+easyocr>=1.7.0
+# Person DNN uses ONNX in viz_nav/models/ (OpenCV 5+); Caffe MobileNet-SSD optional on OpenCV 4

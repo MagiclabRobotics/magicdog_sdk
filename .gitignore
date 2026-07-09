@@ -81,3 +81,15 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+
+# === [viz_nav detection models (large binaries, auto-download)] ===
+example/python/viz_nav/models/*
+!example/python/viz_nav/models/.gitkeep
+!example/python/viz_nav/models/.gitignore
+example/python/viz_nav/*.pt
+example/python/viz_nav/*.onnx
+example/python/viz_nav/runs/
+*.pt
+*.onnx
+*.caffemodel
+*.pth

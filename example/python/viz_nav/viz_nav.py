@@ -26,6 +26,7 @@ import math
 import sys
 import threading
 import time
+import warnings
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
@@ -70,6 +71,14 @@ try:
 except ImportError:
     _UltralyticsYOLO = None  # type: ignore[misc, assignment]
     _HAS_YOLO = False
+
+try:
+    import easyocr as _easyocr
+
+    _HAS_OCR = True
+except ImportError:
+    _easyocr = None  # type: ignore[misc, assignment]
+    _HAS_OCR = False
 
 # UI / matplotlib: prefer fonts with CJK coverage (Chinese labels in this app)
 _CJK_FONT_CANDIDATES = (
@@ -2243,6 +2252,7 @@ class RtspDetectionConfig:
         "aruco",
         "edge",
         "person_dnn",
+        "ocr",
     )
 
     MODE_LABELS = {
@@ -2256,6 +2266,7 @@ class RtspDetectionConfig:
         "aruco": "ArUco 标记",
         "edge": "轮廓/边缘",
         "person_dnn": "人体(DNN)",
+        "ocr": "OCR 文字",
     }
 
     _YOLO_MODES = frozenset({"yolo", "yolo_person", "yolo_pose"})
@@ -2291,6 +2302,166 @@ class RtspDetectionConfig:
     def needs_yolo(cls, mode: str) -> bool:
         return mode in cls._YOLO_MODES
 
+    @classmethod
+    def needs_ocr(cls, mode: str) -> bool:
+        return mode == "ocr"
+
+
+def _parse_ocr_langs() -> List[str]:
+    raw = os.environ.get("VIZ_NAV_OCR_LANGS", "ch_sim,en").strip()
+    langs = [part.strip() for part in raw.replace(";", ",").split(",") if part.strip()]
+    return langs or ["ch_sim", "en"]
+
+
+def _ocr_model_dir() -> str:
+    env = os.environ.get("VIZ_NAV_OCR_MODEL_DIR", "").strip()
+    if env:
+        return env
+    return str(_viz_nav_models_dir() / "easyocr")
+
+
+def _ocr_short_text(text: str, max_len: int = 20) -> str:
+    compact = " ".join(str(text).split())
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 1] + "…"
+
+
+def _ocr_conf_threshold(default: float = 0.25) -> float:
+    raw = os.environ.get("VIZ_NAV_OCR_CONF", "").strip()
+    if not raw:
+        return default
+    try:
+        return max(0.05, min(float(raw), 0.99))
+    except ValueError:
+        return default
+
+
+def _ocr_result_ttl(default: float = 1.5) -> float:
+    raw = os.environ.get("VIZ_NAV_OCR_RESULT_TTL", "").strip()
+    if not raw:
+        return default
+    try:
+        return max(0.3, min(float(raw), 10.0))
+    except ValueError:
+        return default
+
+
+def _ocr_move_threshold(default: float = 10.0) -> float:
+    raw = os.environ.get("VIZ_NAV_OCR_MOVE_THRESHOLD", "").strip()
+    if not raw:
+        return default
+    try:
+        return max(2.0, min(float(raw), 80.0))
+    except ValueError:
+        return default
+
+
+def _ocr_upscale_min() -> float:
+    raw = os.environ.get("VIZ_NAV_OCR_UPSCALE_MIN", "960").strip()
+    try:
+        return max(480.0, float(raw))
+    except ValueError:
+        return 960.0
+
+
+_OCR_VARIANT_BASE = "base"
+_OCR_VARIANT_CLAHE = "clahe"
+_OCR_VARIANT_BLUE = "blue"
+_OCR_LATIN_ALLOWLIST = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+
+def _ocr_preprocess_variants(frame_bgr: np.ndarray) -> List[Tuple[str, float, np.ndarray]]:
+    """Return (name, inv_scale, image) pairs — kept small for RTSP-friendly OCR."""
+    h, w = frame_bgr.shape[:2]
+    target = _ocr_upscale_min()
+    scale = max(1.0, target / max(h, w))
+    if scale > 1.05:
+        base = cv2.resize(frame_bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        inv_scale = 1.0 / scale
+    else:
+        base = frame_bgr
+        inv_scale = 1.0
+
+    variants: List[Tuple[str, float, np.ndarray]] = []
+
+    gray = cv2.cvtColor(base, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+    variants.append((_OCR_VARIANT_CLAHE, inv_scale, cv2.cvtColor(clahe, cv2.COLOR_GRAY2BGR)))
+
+    hsv = cv2.cvtColor(base, cv2.COLOR_BGR2HSV)
+    color_mask = cv2.inRange(hsv, (85, 25, 25), (135, 255, 255))
+    if cv2.countNonZero(color_mask) > 50:
+        variants.append(
+            (_OCR_VARIANT_BLUE, inv_scale, cv2.bitwise_and(base, base, mask=color_mask))
+        )
+
+    variants.append((_OCR_VARIANT_BASE, inv_scale, base))
+    return variants
+
+
+def _ocr_box_iou(a: DetectionBox, b: DetectionBox) -> float:
+    x1 = max(a.x1, b.x1)
+    y1 = max(a.y1, b.y1)
+    x2 = min(a.x2, b.x2)
+    y2 = min(a.y2, b.y2)
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    if inter <= 0:
+        return 0.0
+    area_a = max(0, a.x2 - a.x1) * max(0, a.y2 - a.y1)
+    area_b = max(0, b.x2 - b.x1) * max(0, b.y2 - b.y1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _ocr_normalize_label(text: str) -> str:
+    return re.sub(r"\s+", "", str(text)).upper()
+
+
+def _ocr_deduplicate_boxes(boxes: List[DetectionBox]) -> List[DetectionBox]:
+    ranked = sorted(boxes, key=lambda b: b.score, reverse=True)
+    kept: List[DetectionBox] = []
+    for box in ranked:
+        norm = _ocr_normalize_label(box.label)
+        duplicate = False
+        for existing in kept:
+            existing_norm = _ocr_normalize_label(existing.label)
+            if _ocr_box_iou(box, existing) > 0.35 and (
+                norm == existing_norm or norm in existing_norm or existing_norm in norm
+            ):
+                duplicate = True
+                break
+        if not duplicate:
+            kept.append(box)
+    return kept
+
+
+def _ocr_results_to_boxes(
+    results: object,
+    inv_scale: float,
+    frame_w: int,
+    frame_h: int,
+    min_conf: float,
+) -> List[DetectionBox]:
+    boxes: List[DetectionBox] = []
+    for item in results:
+        if len(item) < 3:
+            continue
+        polygon, text, score = item[0], item[1], float(item[2])
+        if score < min_conf or not str(text).strip():
+            continue
+        xs = [int(pt[0] * inv_scale) for pt in polygon]
+        ys = [int(pt[1] * inv_scale) for pt in polygon]
+        x1 = max(0, min(xs))
+        y1 = max(0, min(ys))
+        x2 = min(frame_w, max(xs))
+        y2 = min(frame_h, max(ys))
+        if x2 <= x1 or y2 <= y1:
+            continue
+        label = _ocr_short_text(str(text))
+        boxes.append(DetectionBox(label, score, x1, y1, x2, y2))
+    return boxes
+
 
 def _viz_nav_models_dir() -> Path:
     return Path(__file__).resolve().parent / "models"
@@ -2320,13 +2491,118 @@ def _resolve_yolo_pose_model_path(explicit: str = "") -> str:
     return "yolov8n-pose.pt"
 
 
-def _resolve_person_dnn_paths() -> Tuple[Path, Path]:
+_VIZ_NAV_DIR = Path(__file__).resolve().parent
+
+
+def _resolve_face_yunet_path() -> Path:
+    models = _viz_nav_models_dir()
+    return Path(
+        os.environ.get("VIZ_NAV_FACE_YUNET", "").strip()
+        or models / "face_detection_yunet_2023mar.onnx"
+    )
+
+
+_FACE_YUNET_URLS = (
+    "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+    "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+)
+_FACE_YUNET_MIN_BYTES = 100_000
+_face_yunet_download_lock = threading.Lock()
+_face_yunet_download_started = False
+_face_yunet_download_error = ""
+
+
+def _face_yunet_file_ready(path: Path) -> bool:
+    return path.is_file() and path.stat().st_size >= _FACE_YUNET_MIN_BYTES
+
+
+def _download_face_yunet_worker(path: Path) -> None:
+    global _face_yunet_download_error
+    try:
+        if path.is_file() and path.stat().st_size < _FACE_YUNET_MIN_BYTES:
+            path.unlink(missing_ok=True)
+        if _face_yunet_file_ready(path):
+            return
+        err = _download_first(_FACE_YUNET_URLS, path, _FACE_YUNET_MIN_BYTES)
+        if err:
+            _face_yunet_download_error = (
+                f"缺少人脸 YuNet 模型，请放到 {path} 或设置 VIZ_NAV_FACE_YUNET（{err}）"
+            )
+            logging.warning("Face YuNet download failed: %s", _face_yunet_download_error)
+        elif _face_yunet_file_ready(path):
+            logging.info("Face YuNet downloaded: %s (%d bytes)", path.name, path.stat().st_size)
+        else:
+            _face_yunet_download_error = f"缺少人脸 YuNet 模型，请放到 {_viz_nav_models_dir()}"
+    except Exception as exc:
+        _face_yunet_download_error = str(exc)
+        logging.warning("Face YuNet download error: %s", exc)
+
+
+def _start_face_yunet_download(path: Path) -> None:
+    """Kick off YuNet download in background so RTSP never blocks on network I/O."""
+    global _face_yunet_download_started
+    with _face_yunet_download_lock:
+        if _face_yunet_file_ready(path) or _face_yunet_download_started:
+            return
+        _face_yunet_download_started = True
+        threading.Thread(
+            target=_download_face_yunet_worker,
+            args=(path,),
+            name="face-yunet-download",
+            daemon=True,
+        ).start()
+
+
+def _ensure_face_yunet_file(path: Path) -> Optional[str]:
+    """Return None if ready, 'downloading' while fetching, or an error string."""
+    if path.is_file() and path.stat().st_size < _FACE_YUNET_MIN_BYTES:
+        path.unlink(missing_ok=True)
+    if _face_yunet_file_ready(path):
+        return None
+    if _face_yunet_download_error:
+        return _face_yunet_download_error
+    _start_face_yunet_download(path)
+    return "downloading"
+
+
+def _resolve_person_dnn_onnx_path() -> Path:
+    models = _viz_nav_models_dir()
+    return Path(
+        os.environ.get("VIZ_NAV_DNN_ONNX", "").strip()
+        or models / "person_detection_mediapipe_2023mar.onnx"
+    )
+
+
+def _resolve_person_dnn_caffe_paths() -> Tuple[Path, Path]:
     models = _viz_nav_models_dir()
     proto = Path(os.environ.get("VIZ_NAV_DNN_PROTOTXT", "").strip() or models / "MobileNetSSD_deploy.prototxt")
     weights = Path(
         os.environ.get("VIZ_NAV_DNN_CAFFEMODEL", "").strip() or models / "MobileNetSSD.caffemodel"
     )
     return proto, weights
+
+
+def _opencv_has_caffe_dnn() -> bool:
+    return _HAS_RTSP_DEPS and hasattr(cv2.dnn, "readNetFromCaffe")
+
+
+_PERSON_DNN_ONNX_URLS = (
+    "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/person_detection_mediapipe/person_detection_mediapipe_2023mar.onnx",
+)
+_PERSON_DNN_MIN_ONNX_BYTES = 10_000_000
+
+
+def _ensure_person_dnn_onnx_file(onnx: Path) -> Optional[str]:
+    if onnx.is_file() and onnx.stat().st_size < _PERSON_DNN_MIN_ONNX_BYTES:
+        onnx.unlink(missing_ok=True)
+    if onnx.is_file():
+        return None
+    err = _download_first(_PERSON_DNN_ONNX_URLS, onnx, _PERSON_DNN_MIN_ONNX_BYTES)
+    if err:
+        return f"缺少 DNN ONNX，请放到 {onnx} 或设置 VIZ_NAV_DNN_ONNX（{err}）"
+    if not onnx.is_file():
+        return f"缺少 DNN ONNX，请放到 {_viz_nav_models_dir()}"
+    return None
 
 
 _PERSON_DNN_PROTO_URLS = (
@@ -2406,11 +2682,23 @@ class RtspFrameDetector:
     _PERSON_DNN_CONF = 0.35
     _PERSON_DNN_INFER_EVERY = 2
     _VOC_PERSON_CLASS = 15
+    _OCR_CONF = 0.25
+    _OCR_INFER_EVERY = 6
+    _OCR_MAG_RATIO = 1.5
+    _OCR_RESULT_TTL = 1.5
+    _OCR_MOVE_THRESHOLD = 10.0
+    _OCR_THUMB_SIZE = (64, 36)
+    _MAX_OCR_BOXES = 12
 
     def __init__(self, yolo_model: str = "", yolo_pose_model: str = "") -> None:
         self._yolo_general_path = _resolve_yolo_model_path(yolo_model)
         self._yolo_pose_path = _resolve_yolo_pose_model_path(yolo_pose_model)
+        self._face_yunet = None
         self._face_cascade = None
+        self._face_error = ""
+        self._face_loading = False
+        self._face_backend = ""
+        self._face_input_size: Tuple[int, int] = (0, 0)
         self._motion_bg = None
         self._yolo_cache: dict[str, object] = {}
         self._yolo_errors: dict[str, str] = {}
@@ -2420,11 +2708,26 @@ class RtspFrameDetector:
         self._yolo_pose_last_frame: Optional[np.ndarray] = None
         self._aruco_last_frame: Optional[np.ndarray] = None
         self._person_dnn_net = None
+        self._person_dnn_mediapipe = None
+        self._person_dnn_backend = ""
         self._person_dnn_error = ""
         self._person_dnn_use_hog = False
         self._person_dnn_last_boxes: List[DetectionBox] = []
         self._person_dnn_frame_counter = 0
         self._person_hog = None
+        self._ocr_reader = None
+        self._ocr_reader_en = None
+        self._ocr_error = ""
+        self._ocr_last_boxes: List[DetectionBox] = []
+        self._ocr_frame_counter = 0
+        self._ocr_result_mono = 0.0
+        self._ocr_ref_thumb: Optional[np.ndarray] = None
+        self._ocr_worker_lock = threading.Lock()
+        self._ocr_worker_thread: Optional[threading.Thread] = None
+        self._ocr_worker_stop = False
+        self._ocr_worker_busy = False
+        self._ocr_pending_frame: Optional[np.ndarray] = None
+        self._ocr_worker_wakeup = threading.Event()
         self._last_summary = "—"
         self._last_count = 0
         self._active_yolo_slot = ""
@@ -2445,11 +2748,68 @@ class RtspFrameDetector:
     def _yolo_error(self, slot: str) -> str:
         return self._yolo_errors.get(slot, "")
 
-    def _face_detector(self):
-        if self._face_cascade is None and _HAS_RTSP_DEPS:
-            path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            self._face_cascade = cv2.CascadeClassifier(path)
-        return self._face_cascade
+    def _ensure_face_detector(self) -> bool:
+        if self._face_yunet is not None or self._face_cascade is not None:
+            self._face_loading = False
+            return True
+        if self._face_error:
+            self._face_loading = False
+            return False
+        if not _HAS_RTSP_DEPS:
+            self._face_error = "缺少 opencv-python"
+            return False
+
+        # OpenCV 5+: Haar CascadeClassifier removed — use FaceDetectorYN (YuNet).
+        if hasattr(cv2, "FaceDetectorYN"):
+            model_path = _resolve_face_yunet_path()
+            status = _ensure_face_yunet_file(model_path)
+            if status == "downloading":
+                self._face_loading = True
+                return False
+            if status:
+                self._face_error = status
+                self._face_loading = False
+                logging.warning("Face YuNet unavailable: %s", status)
+            else:
+                try:
+                    detector = cv2.FaceDetectorYN.create(
+                        str(model_path),
+                        "",
+                        (320, 320),
+                        0.6,
+                        0.3,
+                        5000,
+                    )
+                    self._face_yunet = detector
+                    self._face_backend = "yunet"
+                    self._face_input_size = (320, 320)
+                    self._face_loading = False
+                    logging.info("Face detector loaded (YuNet): %s", model_path.name)
+                    return True
+                except Exception as exc:
+                    logging.warning("Face YuNet load failed: %s", exc)
+                    self._face_error = str(exc)
+                    self._face_loading = False
+
+        if hasattr(cv2, "CascadeClassifier"):
+            try:
+                path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+                cascade = cv2.CascadeClassifier(path)
+                if cascade is not None and not cascade.empty():
+                    self._face_cascade = cascade
+                    self._face_backend = "haar"
+                    self._face_loading = False
+                    logging.info("Face detector loaded (Haar cascade)")
+                    return True
+            except Exception as exc:
+                logging.warning("Face Haar load failed: %s", exc)
+                if not self._face_error:
+                    self._face_error = str(exc)
+                self._face_loading = False
+
+        if not self._face_error and not self._face_loading:
+            self._face_error = "OpenCV 无人脸检测器（需 FaceDetectorYN 或 CascadeClassifier）"
+        return False
 
     def process(self, frame_bgr: np.ndarray, mode: str) -> Tuple[np.ndarray, List[DetectionBox]]:
         if not _HAS_RTSP_DEPS or mode == "off":
@@ -2493,6 +2853,10 @@ class RtspFrameDetector:
             boxes = self._detect_person_dnn(frame_bgr)
             max_boxes = self._MAX_YOLO_BOXES
             box_color = (0, 140, 255)
+        elif mode == "ocr":
+            boxes = self._detect_ocr(frame_bgr)
+            max_boxes = self._MAX_OCR_BOXES
+            box_color = (0, 255, 255)
 
         if skip_box_overlay:
             out = frame_vis
@@ -2526,6 +2890,19 @@ class RtspFrameDetector:
             self._last_summary = f"DNN 不可用: {self._person_dnn_error}"
         elif mode == "person_dnn" and self._person_dnn_use_hog:
             self._last_summary = "无目标 (HOG fallback)"
+        elif mode == "ocr" and self._ocr_error:
+            self._last_summary = f"OCR 不可用: {self._ocr_error}"
+        elif mode == "ocr":
+            with self._ocr_worker_lock:
+                ocr_pending = self._ocr_worker_busy or self._ocr_pending_frame is not None
+            if ocr_pending:
+                self._last_summary = "识别中…"
+            else:
+                self._last_summary = "无目标"
+        elif mode == "face" and self._face_loading:
+            self._last_summary = "人脸模型下载中…"
+        elif mode == "face" and self._face_error:
+            self._last_summary = f"人脸不可用: {self._face_error}"
         else:
             self._last_summary = "无目标"
         return out, boxes
@@ -2558,16 +2935,80 @@ class RtspFrameDetector:
         return boxes[: self._MAX_BOXES]
 
     def _detect_faces(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
-        cascade = self._face_detector()
-        if cascade is None or cascade.empty():
-            self._last_summary = "人脸模型不可用"
+        if not self._ensure_face_detector():
+            if self._face_loading:
+                self._last_summary = "人脸模型下载中…"
+            else:
+                self._last_summary = f"人脸不可用: {self._face_error or '模型加载失败'}"
             return []
-        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-        faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(48, 48))
+
+        h, w = frame_bgr.shape[:2]
         boxes: List[DetectionBox] = []
-        for x, y, w, h in faces:
-            boxes.append(DetectionBox("人脸", 0.85, int(x), int(y), int(x + w), int(y + h)))
-        return boxes[: self._MAX_BOXES]
+
+        if self._face_yunet is not None:
+            # Keep inference light for RTSP: max long side 640.
+            scale = 1.0
+            max_side = max(h, w)
+            if max_side > 640:
+                scale = 640.0 / max_side
+                infer = cv2.resize(
+                    frame_bgr,
+                    (int(w * scale), int(h * scale)),
+                    interpolation=cv2.INTER_AREA,
+                )
+            else:
+                infer = frame_bgr
+            ih, iw = infer.shape[:2]
+            if self._face_input_size != (iw, ih):
+                self._face_yunet.setInputSize((iw, ih))
+                self._face_input_size = (iw, ih)
+            try:
+                _retval, faces = self._face_yunet.detect(infer)
+            except Exception as exc:
+                logging.warning("Face YuNet detect failed: %s", exc)
+                self._face_error = str(exc)
+                return []
+            if faces is None:
+                return []
+            inv = 1.0 / scale
+            for face in faces:
+                x, y, bw, bh = face[:4]
+                score = float(face[-1]) if len(face) > 4 else 0.85
+                x1 = max(0, int(x * inv))
+                y1 = max(0, int(y * inv))
+                x2 = min(w, int((x + bw) * inv))
+                y2 = min(h, int((y + bh) * inv))
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                boxes.append(DetectionBox("人脸", score, x1, y1, x2, y2))
+            boxes.sort(key=lambda b: b.score, reverse=True)
+            return boxes[: self._MAX_BOXES]
+
+        if self._face_cascade is not None:
+            gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+            # Downscale for Haar speed on HD streams.
+            scale = 1.0
+            max_side = max(h, w)
+            if max_side > 640:
+                scale = 640.0 / max_side
+                gray = cv2.resize(
+                    gray,
+                    (int(w * scale), int(h * scale)),
+                    interpolation=cv2.INTER_AREA,
+                )
+            faces = self._face_cascade.detectMultiScale(
+                gray, scaleFactor=1.2, minNeighbors=5, minSize=(32, 32)
+            )
+            inv = 1.0 / scale
+            for x, y, fw, fh in faces:
+                x1 = int(x * inv)
+                y1 = int(y * inv)
+                x2 = int((x + fw) * inv)
+                y2 = int((y + fh) * inv)
+                boxes.append(DetectionBox("人脸", 0.85, x1, y1, x2, y2))
+            return boxes[: self._MAX_BOXES]
+
+        return []
 
     def _detect_motion(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
         if self._motion_bg is None:
@@ -2809,31 +3250,59 @@ class RtspFrameDetector:
         return out, self._yolo_last_boxes[cache_key]
 
     def _ensure_person_dnn(self) -> bool:
-        if self._person_dnn_net is not None:
+        if self._person_dnn_mediapipe is not None or self._person_dnn_net is not None:
             return True
         if self._person_dnn_use_hog:
             return True
         if self._person_dnn_error:
             return False
-        proto, weights = _resolve_person_dnn_paths()
-        missing = _ensure_person_dnn_files(proto, weights)
-        if missing:
+
+        onnx_path = _resolve_person_dnn_onnx_path()
+        missing = _ensure_person_dnn_onnx_file(onnx_path)
+        if not missing:
+            try:
+                if str(_VIZ_NAV_DIR) not in sys.path:
+                    sys.path.insert(0, str(_VIZ_NAV_DIR))
+                from mp_persondet import MPPersonDet
+
+                model = MPPersonDet(
+                    str(onnx_path),
+                    scoreThreshold=self._PERSON_DNN_CONF,
+                    nmsThreshold=0.3,
+                )
+                self._person_dnn_mediapipe = model
+                self._person_dnn_backend = "onnx"
+                self._person_dnn_use_hog = False
+                logging.info("Person DNN loaded (ONNX): %s", onnx_path.name)
+                return True
+            except Exception as exc:
+                logging.warning("Person DNN ONNX load failed: %s", exc)
+
+        if _opencv_has_caffe_dnn():
+            proto, weights = _resolve_person_dnn_caffe_paths()
+            missing = _ensure_person_dnn_files(proto, weights)
+            if not missing:
+                try:
+                    net = cv2.dnn.readNetFromCaffe(str(proto), str(weights))
+                    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+                    net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+                    self._person_dnn_net = net
+                    self._person_dnn_backend = "caffe"
+                    self._person_dnn_use_hog = False
+                    logging.info("Person DNN loaded (Caffe): %s + %s", proto.name, weights.name)
+                    return True
+                except Exception as exc:
+                    logging.warning("Person DNN Caffe load failed: %s", exc)
+                    self._person_dnn_error = str(exc)
+            else:
+                logging.warning("Person DNN unavailable: %s", missing)
+        elif missing:
             logging.warning("Person DNN unavailable: %s", missing)
-            self._person_dnn_use_hog = True
-            return True
-        try:
-            net = cv2.dnn.readNetFromCaffe(str(proto), str(weights))
-            net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
-            net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
-            self._person_dnn_net = net
-            self._person_dnn_use_hog = False
-            logging.info("Person DNN loaded: %s + %s", proto.name, weights.name)
-            return True
-        except Exception as exc:
-            logging.warning("Person DNN load failed, using HOG fallback: %s", exc)
-            self._person_dnn_error = str(exc)
-            self._person_dnn_use_hog = True
-            return True
+            self._person_dnn_error = missing
+
+        logging.warning("Person DNN load failed, using HOG fallback")
+        self._person_dnn_use_hog = True
+        return True
 
     def _person_hog_detector(self):
         if self._person_hog is None and _HAS_RTSP_DEPS:
@@ -2867,51 +3336,290 @@ class RtspFrameDetector:
             self._person_dnn_last_boxes = []
             return []
 
-        if self._person_dnn_use_hog or self._person_dnn_net is None:
+        if self._person_dnn_use_hog or (
+            self._person_dnn_mediapipe is None and self._person_dnn_net is None
+        ):
             self._person_dnn_last_boxes = self._detect_person_hog(frame_bgr)
             return self._person_dnn_last_boxes
 
         h, w = frame_bgr.shape[:2]
-        blob = cv2.dnn.blobFromImage(
-            cv2.resize(frame_bgr, (300, 300)),
-            scalefactor=1.0 / 127.5,
-            size=(300, 300),
-            mean=(127.5, 127.5, 127.5),
-            swapRB=True,
-            crop=False,
-        )
+        boxes: List[DetectionBox] = []
         try:
-            self._person_dnn_net.setInput(blob)
-            detections = self._person_dnn_net.forward()
+            if self._person_dnn_mediapipe is not None:
+                results = self._person_dnn_mediapipe.infer(frame_bgr)
+                for row in results:
+                    x1, y1, x2, y2 = (int(v) for v in row[:4])
+                    confidence = float(row[-1])
+                    x1 = max(0, min(x1, w - 1))
+                    y1 = max(0, min(y1, h - 1))
+                    x2 = max(0, min(x2, w))
+                    y2 = max(0, min(y2, h))
+                    if x2 <= x1 or y2 <= y1:
+                        continue
+                    boxes.append(DetectionBox("人体", confidence, x1, y1, x2, y2))
+            else:
+                blob = cv2.dnn.blobFromImage(
+                    cv2.resize(frame_bgr, (300, 300)),
+                    scalefactor=1.0 / 127.5,
+                    size=(300, 300),
+                    mean=(127.5, 127.5, 127.5),
+                    swapRB=True,
+                    crop=False,
+                )
+                self._person_dnn_net.setInput(blob)
+                detections = self._person_dnn_net.forward()
+                if detections.ndim == 4 and detections.shape[2] > 0:
+                    for i in range(detections.shape[2]):
+                        confidence = float(detections[0, 0, i, 2])
+                        class_id = int(detections[0, 0, i, 1])
+                        if confidence < self._PERSON_DNN_CONF or class_id != self._VOC_PERSON_CLASS:
+                            continue
+                        x1 = int(detections[0, 0, i, 3] * w)
+                        y1 = int(detections[0, 0, i, 4] * h)
+                        x2 = int(detections[0, 0, i, 5] * w)
+                        y2 = int(detections[0, 0, i, 6] * h)
+                        x1 = max(0, min(x1, w - 1))
+                        y1 = max(0, min(y1, h - 1))
+                        x2 = max(0, min(x2, w))
+                        y2 = max(0, min(y2, h))
+                        if x2 <= x1 or y2 <= y1:
+                            continue
+                        boxes.append(DetectionBox("人体", confidence, x1, y1, x2, y2))
         except Exception as exc:
             logging.warning("Person DNN infer failed, switching to HOG: %s", exc)
             self._person_dnn_error = str(exc)
             self._person_dnn_net = None
+            self._person_dnn_mediapipe = None
+            self._person_dnn_backend = ""
             self._person_dnn_use_hog = True
             self._person_dnn_last_boxes = self._detect_person_hog(frame_bgr)
             return self._person_dnn_last_boxes
 
-        boxes: List[DetectionBox] = []
-        if detections.ndim == 4 and detections.shape[2] > 0:
-            for i in range(detections.shape[2]):
-                confidence = float(detections[0, 0, i, 2])
-                class_id = int(detections[0, 0, i, 1])
-                if confidence < self._PERSON_DNN_CONF or class_id != self._VOC_PERSON_CLASS:
-                    continue
-                x1 = int(detections[0, 0, i, 3] * w)
-                y1 = int(detections[0, 0, i, 4] * h)
-                x2 = int(detections[0, 0, i, 5] * w)
-                y2 = int(detections[0, 0, i, 6] * h)
-                x1 = max(0, min(x1, w - 1))
-                y1 = max(0, min(y1, h - 1))
-                x2 = max(0, min(x2, w))
-                y2 = max(0, min(y2, h))
-                if x2 <= x1 or y2 <= y1:
-                    continue
-                boxes.append(DetectionBox("人体", confidence, x1, y1, x2, y2))
         boxes.sort(key=lambda b: b.score, reverse=True)
         self._person_dnn_last_boxes = boxes[: self._MAX_YOLO_BOXES]
         return self._person_dnn_last_boxes
+
+    def _ensure_ocr(self) -> bool:
+        if self._ocr_reader is not None:
+            return True
+        if self._ocr_error:
+            return False
+        if not _HAS_OCR or _easyocr is None:
+            self._ocr_error = "未安装 easyocr（pip install easyocr）"
+            return False
+        try:
+            model_dir = _ocr_model_dir()
+            Path(model_dir).mkdir(parents=True, exist_ok=True)
+            langs = _parse_ocr_langs()
+            logging.info("Loading EasyOCR langs=%s dir=%s", langs, model_dir)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=".*pin_memory.*",
+                    category=UserWarning,
+                )
+                self._ocr_reader = _easyocr.Reader(
+                    langs,
+                    gpu=False,
+                    verbose=False,
+                    model_storage_directory=model_dir,
+                )
+            return True
+        except Exception as exc:
+            self._ocr_error = str(exc)
+            logging.exception("EasyOCR load failed")
+            return False
+
+    def _ensure_ocr_en_fallback(self) -> bool:
+        if self._ocr_reader_en is not None:
+            return True
+        if not _HAS_OCR or _easyocr is None:
+            return False
+        try:
+            model_dir = _ocr_model_dir()
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=".*pin_memory.*",
+                    category=UserWarning,
+                )
+                self._ocr_reader_en = _easyocr.Reader(
+                    ["en"],
+                    gpu=False,
+                    verbose=False,
+                    model_storage_directory=model_dir,
+                )
+            logging.info("EasyOCR English fallback reader loaded")
+            return True
+        except Exception as exc:
+            logging.warning("EasyOCR English fallback unavailable: %s", exc)
+            return False
+
+    def _run_ocr_on_variants(
+        self,
+        frame_bgr: np.ndarray,
+        reader: object,
+        variants: List[Tuple[str, float, np.ndarray]],
+        *,
+        allowlist: str = "",
+        variant_names: Optional[Tuple[str, ...]] = None,
+    ) -> List[DetectionBox]:
+        h, w = frame_bgr.shape[:2]
+        min_conf = _ocr_conf_threshold(self._OCR_CONF)
+        kwargs: dict = {"paragraph": False, "mag_ratio": self._OCR_MAG_RATIO}
+        if allowlist:
+            kwargs["allowlist"] = allowlist
+        boxes: List[DetectionBox] = []
+        for name, inv_scale, variant in variants:
+            if variant_names is not None and name not in variant_names:
+                continue
+            results = reader.readtext(variant, **kwargs)
+            boxes.extend(_ocr_results_to_boxes(results, inv_scale, w, h, min_conf))
+        return boxes
+
+    def _stop_ocr_worker(self, wait_s: float = 2.0) -> None:
+        self._ocr_worker_stop = True
+        self._ocr_worker_wakeup.set()
+        thread = self._ocr_worker_thread
+        if thread and thread.is_alive():
+            thread.join(timeout=wait_s)
+        self._ocr_worker_thread = None
+        self._ocr_worker_stop = False
+        with self._ocr_worker_lock:
+            self._ocr_pending_frame = None
+            self._ocr_worker_busy = False
+
+    def _start_ocr_worker(self) -> None:
+        with self._ocr_worker_lock:
+            if self._ocr_worker_thread and self._ocr_worker_thread.is_alive():
+                self._ocr_worker_wakeup.set()
+                return
+            self._ocr_worker_stop = False
+            self._ocr_worker_wakeup = threading.Event()
+            self._ocr_worker_thread = threading.Thread(
+                target=self._ocr_worker_loop,
+                name="ocr-worker",
+                daemon=True,
+            )
+            self._ocr_worker_thread.start()
+
+    def _ocr_worker_loop(self) -> None:
+        while not self._ocr_worker_stop:
+            frame: Optional[np.ndarray] = None
+            with self._ocr_worker_lock:
+                if self._ocr_pending_frame is not None:
+                    frame = self._ocr_pending_frame
+                    self._ocr_pending_frame = None
+                    self._ocr_worker_busy = True
+            if frame is None:
+                self._ocr_worker_wakeup.wait(timeout=0.25)
+                if self._ocr_worker_stop:
+                    break
+                continue
+            try:
+                boxes = self._run_ocr_infer_sync(frame)
+                self._ocr_last_boxes = boxes[: self._MAX_OCR_BOXES]
+                self._ocr_result_mono = time.monotonic()
+                self._ocr_ref_thumb = cv2.resize(
+                    frame,
+                    self._OCR_THUMB_SIZE,
+                    interpolation=cv2.INTER_AREA,
+                )
+            except Exception as exc:
+                self._ocr_error = str(exc)
+                logging.warning("OCR worker failed: %s", exc)
+            finally:
+                with self._ocr_worker_lock:
+                    self._ocr_worker_busy = False
+
+    def _run_ocr_infer_sync(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
+        if not self._ensure_ocr():
+            return []
+        variants = _ocr_preprocess_variants(frame_bgr)
+        variant_names = tuple(name for name, _, _ in variants)
+        langs = _parse_ocr_langs()
+        has_chinese = any(lang.startswith("ch") for lang in langs)
+
+        boxes = self._run_ocr_on_variants(
+            frame_bgr,
+            self._ocr_reader,
+            variants,
+            variant_names=(_OCR_VARIANT_CLAHE,),
+        )
+
+        if "en" not in langs:
+            return _ocr_deduplicate_boxes(boxes)
+
+        if has_chinese:
+            latin_reader = self._ocr_reader
+            if self._ensure_ocr_en_fallback() and self._ocr_reader_en is not None:
+                latin_reader = self._ocr_reader_en
+            latin_variants: Tuple[str, ...] = (
+                (_OCR_VARIANT_BLUE,) if _OCR_VARIANT_BLUE in variant_names else (_OCR_VARIANT_CLAHE,)
+            )
+            boxes.extend(
+                self._run_ocr_on_variants(
+                    frame_bgr,
+                    latin_reader,
+                    variants,
+                    allowlist=_OCR_LATIN_ALLOWLIST,
+                    variant_names=latin_variants,
+                )
+            )
+        elif not boxes and _OCR_VARIANT_BLUE in variant_names:
+            boxes.extend(
+                self._run_ocr_on_variants(
+                    frame_bgr,
+                    self._ocr_reader,
+                    variants,
+                    allowlist=_OCR_LATIN_ALLOWLIST,
+                    variant_names=(_OCR_VARIANT_BLUE,),
+                )
+            )
+
+        boxes = _ocr_deduplicate_boxes(boxes)
+        if boxes:
+            preview = ", ".join(f"{b.label}({b.score:.2f})" for b in boxes[:3])
+            logging.info("OCR hits: %s", preview)
+        return boxes
+
+    def _ocr_scene_moved(self, frame_bgr: np.ndarray) -> bool:
+        if self._ocr_ref_thumb is None or not self._ocr_last_boxes:
+            return False
+        thumb = cv2.resize(frame_bgr, self._OCR_THUMB_SIZE, interpolation=cv2.INTER_AREA)
+        diff = float(np.mean(cv2.absdiff(thumb, self._ocr_ref_thumb)))
+        return diff > _ocr_move_threshold(self._OCR_MOVE_THRESHOLD)
+
+    def _ocr_clear_results(self) -> None:
+        self._ocr_last_boxes = []
+        self._ocr_result_mono = 0.0
+
+    def _detect_ocr(self, frame_bgr: np.ndarray) -> List[DetectionBox]:
+        """Non-blocking OCR: background worker + stale box clearing on motion."""
+        if not _HAS_OCR or _easyocr is None:
+            self._ocr_error = "未安装 easyocr（pip install easyocr）"
+            return []
+
+        if self._ocr_scene_moved(frame_bgr):
+            self._ocr_clear_results()
+
+        ttl = _ocr_result_ttl(self._OCR_RESULT_TTL)
+        if (
+            self._ocr_last_boxes
+            and self._ocr_result_mono > 0
+            and time.monotonic() - self._ocr_result_mono > ttl
+        ):
+            self._ocr_clear_results()
+
+        self._ocr_frame_counter += 1
+        if self._ocr_frame_counter % self._OCR_INFER_EVERY == 0:
+            self._ocr_clear_results()
+            self._start_ocr_worker()
+            with self._ocr_worker_lock:
+                self._ocr_pending_frame = frame_bgr.copy()
+                self._ocr_worker_wakeup.set()
+
+        return list(self._ocr_last_boxes)
 
     def reset(self) -> None:
         self._motion_bg = None
@@ -2921,8 +3629,16 @@ class RtspFrameDetector:
         self._aruco_last_frame = None
         self._person_dnn_frame_counter = 0
         self._person_dnn_last_boxes = []
+        self._person_dnn_net = None
+        self._person_dnn_mediapipe = None
+        self._person_dnn_backend = ""
         self._person_dnn_error = ""
         self._person_dnn_use_hog = False
+        self._stop_ocr_worker()
+        self._ocr_frame_counter = 0
+        self._ocr_last_boxes = []
+        self._ocr_result_mono = 0.0
+        self._ocr_ref_thumb = None
         self._active_yolo_slot = ""
         self._last_summary = "—"
         self._last_count = 0
@@ -3211,10 +3927,18 @@ class RtspPlayer:
                 last_ui = now
                 try:
                     det_mode = self._detection_config.get_mode()
-                    frame_vis, _boxes = self._detector.process(frame, det_mode)
-                    self._record_detection(
-                        det_mode, self._detector.last_count, self._detector.last_summary
-                    )
+                    try:
+                        frame_vis, _boxes = self._detector.process(frame, det_mode)
+                        self._record_detection(
+                            det_mode,
+                            self._detector.last_count,
+                            self._detector.last_summary,
+                        )
+                    except Exception as det_exc:
+                        # Never block RTSP preview on detector failures (e.g. OpenCV 5 API gaps).
+                        logging.warning("RTSP detection (%s) failed: %s", det_mode, det_exc)
+                        frame_vis = frame
+                        self._record_detection(det_mode, 0, f"检测失败: {det_exc}")
                     src_h, src_w = frame_vis.shape[:2]
                     frame_rgb = cv2.cvtColor(frame_vis, cv2.COLOR_BGR2RGB)
                     img = Image.fromarray(frame_rgb)
@@ -3229,7 +3953,7 @@ class RtspPlayer:
                     self._record_frame_ok(src_w, src_h, disp_w, disp_h)
                     self.root.after(0, self._show_frame, photo)
                 except Exception as exc:
-                    logging.debug("RTSP frame: %s", exc)
+                    logging.warning("RTSP frame display: %s", exc)
         except Exception as exc:
             logging.exception("RTSP capture loop")
             self._status = "Read error"
@@ -5214,9 +5938,10 @@ class NavVizApp:
 
     def _rtsp_detection_hint_text(self) -> str:
         yolo_note = "YOLO/姿态需 ultralytics" if _HAS_YOLO else "YOLO需 ultralytics"
+        ocr_note = "OCR后台识别不卡流" if _HAS_OCR else "OCR需 easyocr"
         return (
             "通用/行人需 yolov8n.pt(detect)，姿态需 yolov8n-pose.pt；"
-            f"{yolo_note}；人体DNN 模型见 viz_nav/models/（失败时自动 HOG）"
+            f"{yolo_note}；{ocr_note}；人体DNN见 models/ ONNX（OpenCV5+，失败时 HOG）"
         )
 
     def _on_rtsp_detection_mode_changed(self, _event=None) -> None:
@@ -5227,6 +5952,12 @@ class NavVizApp:
                 "RTSP 检测",
                 False,
                 "YOLO 需安装 ultralytics: pip install ultralytics",
+            )
+        if RtspDetectionConfig.needs_ocr(mode) and not _HAS_OCR:
+            self._log_action(
+                "RTSP 检测",
+                False,
+                "OCR 需安装 easyocr: pip install easyocr",
             )
         self.rtsp_detection_config.set_mode(mode)
         if hasattr(self, "rtsp_player"):
