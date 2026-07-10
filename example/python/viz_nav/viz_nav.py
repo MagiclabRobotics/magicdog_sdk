@@ -3,7 +3,7 @@
 """
 MagicDog navigation GUI — SdkTransportMode::GrpcOnly (WiFi / robot AP).
 
-- Motion: gait, tricks, joystick (linear / angular velocity)
+- Motion: gait, tricks, head position, joystick (linear / angular velocity)
 - SLAM: mapping, map load/save/delete
 - Navigation & Map: workflow, occupancy grid, click-to-set pose/goal, navigate
 - Video: RTSP preview (default rtsp://<robot-ip>:8082) with optional OpenCV detection overlay
@@ -1561,6 +1561,14 @@ class RobotSession:
         self.map_origin = (0.0, 0.0)
         self.map_resolution = 0.05
         self._last_gait: Optional[object] = None
+        self._next_nav_goal_id = 1
+
+    def next_nav_goal_id(self) -> int:
+        """Allocate a unique NavTarget id (increments like viz_ros)."""
+        with self._lock:
+            goal_id = self._next_nav_goal_id
+            self._next_nav_goal_id += 1
+            return goal_id
 
     def remember_gait(self, gait: object) -> None:
         if gait is not None and not _gait_is_sentinel(gait):
@@ -1622,6 +1630,7 @@ class RobotSession:
             for key in self._sensor_hw:
                 self._sensor_hw[key] = False
             self._last_gait = None
+            self._next_nav_goal_id = 1
             self.robot_state = None
             self.connected = False
 
@@ -1743,15 +1752,54 @@ class RobotSession:
 
         return self.run(_do)
 
-    def start_joy_loop(self, get_axes: Callable[[], Tuple[float, float, float, float]]) -> None:
+    def get_head_position(self) -> Tuple[bool, Optional[object], str]:
+        if not self.connected or not self.high:
+            return False, None, "Not connected"
+
+        def _do():
+            st, angles = self.high.get_current_head_position()
+            if not _status_ok(st):
+                return False, None, st.message
+            return True, angles, "ok"
+
+        try:
+            return _do()
+        except Exception as exc:
+            logging.exception("get_head_position")
+            return False, None, str(exc)
+
+    def set_head_yaw(self, yaw_rad: float) -> Tuple[bool, str]:
+        def _do():
+            angles = magicdog.EulerAngles()
+            angles.roll = 0.0
+            angles.pitch = 0.0
+            angles.yaw = float(yaw_rad)
+            st = self.high.set_head_position(angles)
+            return _status_ok(st), st.message
+
+        return self.run(_do)
+
+    def start_joy_loop(
+        self,
+        get_axes: Callable[[], Tuple[float, float, float, float]],
+        get_head_yaw: Optional[Callable[[], float]] = None,
+    ) -> None:
         self._stop_joy()
         self.joy_active = True
         self.joy_thread = threading.Thread(
-            target=self._joy_loop, args=(get_axes,), daemon=True
+            target=self._joy_loop,
+            args=(get_axes, get_head_yaw),
+            daemon=True,
         )
         self.joy_thread.start()
 
-    def _joy_loop(self, get_axes: Callable[[], Tuple[float, float, float, float]]) -> None:
+    def _joy_loop(
+        self,
+        get_axes: Callable[[], Tuple[float, float, float, float]],
+        get_head_yaw: Optional[Callable[[], float]] = None,
+    ) -> None:
+        head_tick = 0
+        last_head_yaw: Optional[float] = None
         while self.joy_active and self.connected:
             try:
                 lx, ly, rx, ry = get_axes()
@@ -1761,6 +1809,20 @@ class RobotSession:
                 cmd.right_x_axis = max(-1.0, min(1.0, rx))
                 cmd.right_y_axis = max(-1.0, min(1.0, ry))
                 self.high.send_joystick_command(cmd)
+
+                # Head yaw via stick: absolute map [-1,1] → ±60°, ~4 Hz to avoid RPC flood.
+                if get_head_yaw is not None:
+                    head_tick += 1
+                    if head_tick % 5 == 0:
+                        yaw_norm = max(-1.0, min(1.0, float(get_head_yaw())))
+                        yaw_rad = yaw_norm * (60.0 * math.pi / 180.0)
+                        if last_head_yaw is None or abs(yaw_rad - last_head_yaw) > 0.015:
+                            angles = magicdog.EulerAngles()
+                            angles.roll = 0.0
+                            angles.pitch = 0.0
+                            angles.yaw = yaw_rad
+                            self.high.set_head_position(angles)
+                            last_head_yaw = yaw_rad
             except Exception as exc:
                 logging.debug("joystick: %s", exc)
             time.sleep(0.05)
@@ -4445,10 +4507,18 @@ class NavVizApp:
         self.right_stick = VirtualJoystick(
             sticks,
             size=js,
-            label="Right\nX yaw",
+            label="Right\nX body yaw",
             horizontal_only=True,
         )
         self.right_stick.pack(side=tk.LEFT, padx=12)
+
+        self.head_stick = VirtualJoystick(
+            sticks,
+            size=js,
+            label="Head\nX yaw ±60°",
+            horizontal_only=True,
+        )
+        self.head_stick.pack(side=tk.LEFT, padx=12)
 
         state_card = ttk.LabelFrame(joy_row, text=" RobotState ")
         state_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -4504,10 +4574,21 @@ class NavVizApp:
         self.joy_status_pill.pack(side=tk.LEFT, padx=8)
         self.joy_status_label = ttk.Label(bf, text="未向机器人发送摇杆指令", style="CardMuted.TLabel")
         self.joy_status_label.pack(side=tk.LEFT, padx=4)
+        ttk.Button(
+            bf,
+            text="Get head yaw",
+            command=self._wrap_action("Get head yaw", self._on_get_head_yaw),
+        ).pack(side=tk.LEFT, padx=(16, 4))
+        self.head_status_label = ttk.Label(
+            bf,
+            text="Head yaw: —",
+            style="CardMuted.TLabel",
+        )
+        self.head_status_label.pack(side=tk.LEFT, padx=4)
 
         ttk.Label(
             self._joy_frame,
-            text="推流：按住移动，松开回零；Stop 结束。",
+            text="推流：左/右控机身；Head 摇杆控头部 Yaw（±60°，约 4Hz）。松开回中。",
             style="CardHint.TLabel",
         ).pack(pady=(0, t.PAD_ROW))
         self._update_joy_stream_ui(False)
@@ -4921,7 +5002,7 @@ class NavVizApp:
 
         ttk.Label(
             plot_card,
-            text="左键=位置  ·  右键按住拖动=旋转朝向  ·  左键双击=提交",
+            text="左键=位置  ·  右键双击=旋转朝向  ·  左键双击=提交",
             style="CardHint.TLabel",
         ).pack(pady=(0, t.PAD_ROW))
 
@@ -5838,10 +5919,18 @@ class NavVizApp:
         self.video_right_stick = VirtualJoystick(
             sticks,
             size=stick_size,
-            label="右：转向",
+            label="右：机身转向",
             horizontal_only=True,
         )
         self.video_right_stick.pack(side=tk.LEFT, padx=10)
+
+        self.video_head_stick = VirtualJoystick(
+            sticks,
+            size=stick_size,
+            label="头：Yaw ±60°",
+            horizontal_only=True,
+        )
+        self.video_head_stick.pack(side=tk.LEFT, padx=10)
 
         bf = ttk.Frame(video_joy_scroll, style="Card.TFrame")
         bf.pack(fill=tk.X, padx=t.PAD_INNER, pady=t.PAD_ROW)
@@ -5862,6 +5951,11 @@ class NavVizApp:
             state=tk.DISABLED,
         )
         self.video_joy_stop_btn.pack(side=tk.LEFT, padx=4, pady=t.PAD_ROW)
+        ttk.Button(
+            bf,
+            text="Get head yaw",
+            command=self._wrap_action("Get head yaw", self._on_get_head_yaw),
+        ).pack(side=tk.LEFT, padx=(8, 4), pady=t.PAD_ROW)
 
         status_row = ttk.Frame(video_joy_scroll, style="Card.TFrame")
         status_row.pack(fill=tk.X, padx=t.PAD_INNER, pady=(0, t.PAD_INNER))
@@ -5875,11 +5969,18 @@ class NavVizApp:
             style="CardMuted.TLabel",
             wraplength=260,
         )
-        self.video_joy_status_label.pack(anchor=tk.W, padx=4, pady=(0, 6))
+        self.video_joy_status_label.pack(anchor=tk.W, padx=4, pady=(0, 2))
+        self.video_head_status_label = ttk.Label(
+            status_row,
+            text="Head yaw: —",
+            style="CardMuted.TLabel",
+            wraplength=260,
+        )
+        self.video_head_status_label.pack(anchor=tk.W, padx=4, pady=(0, 6))
 
         ttk.Label(
             video_joy_scroll,
-            text="按住摇杆移动；须先 Connect。与 Motion 页同时仅一路推流。",
+            text="左/右控机身；头摇杆控 Yaw。须 Connect + Start stream；与 Motion 仅一路推流。",
             style="CardHint.TLabel",
             wraplength=280,
         ).pack(padx=t.PAD_ROW, pady=(0, t.PAD_ROW))
@@ -6209,6 +6310,37 @@ class NavVizApp:
         ok, msg = self.session.execute_trick(self._trick_value())
         self._log_action("Execute trick", ok, msg)
 
+    @staticmethod
+    def _rad2deg(rad: float) -> float:
+        return float(rad) * 180.0 / math.pi
+
+    def _on_get_head_yaw(self) -> None:
+        ok, angles, msg = self.session.get_head_position()
+        if ok and angles is not None:
+            yaw = self._rad2deg(getattr(angles, "yaw", 0.0))
+            detail = f"yaw={yaw:.2f}°"
+            text = f"Head yaw: {yaw:.2f}°"
+            style = "StatusOk.TLabel"
+            self._log_action("Get head yaw", True, detail)
+        else:
+            text = f"Head yaw: fail — {msg}"
+            style = "StatusBad.TLabel"
+            self._log_action("Get head yaw", False, msg)
+        for attr in ("head_status_label", "video_head_status_label"):
+            label = getattr(self, attr, None)
+            if label is not None:
+                label.config(text=text, style=style)
+
+    def _get_head_yaw_axis(self) -> float:
+        source = getattr(self, "_joy_axes_source", "motion")
+        if source == "video" and hasattr(self, "video_head_stick"):
+            hx, _hy = self.video_head_stick.get_values()
+            return float(hx)
+        if hasattr(self, "head_stick"):
+            hx, _hy = self.head_stick.get_values()
+            return float(hx)
+        return 0.0
+
     def _update_joy_stream_ui(self, streaming: bool) -> None:
         for ui in self._joy_ui_targets():
             if streaming:
@@ -6237,11 +6369,19 @@ class NavVizApp:
             self._log_action("Start stream", False, "请先 Connect")
             messagebox.showwarning("Joystick", "Connect first")
             return
+        if not self.session.high:
+            self._log_action("Start stream", False, "高层运动控制器不可用")
+            return
+        # Nav may have left the rocker stream disabled; reopen before 20Hz push.
+        st = self.session.high.enable_joy_stick()
+        if not _status_ok(st) and "already enabled" not in (st.message or "").lower():
+            self._log_action("Start stream", False, st.message or "enable_joy_stick failed")
+            return
         self._joy_axes_source = source
-        self.session.start_joy_loop(self._get_joy_axes)
+        self.session.start_joy_loop(self._get_joy_axes, get_head_yaw=self._get_head_yaw_axis)
         self._update_joy_stream_ui(True)
         where = "Video" if source == "video" else "Motion"
-        self._log_action("Start stream", True, f"摇杆推流 20Hz ({where})")
+        self._log_action("Start stream", True, f"摇杆推流 20Hz ({where} + Head yaw)")
 
     def _get_joy_axes(self) -> Tuple[float, float, float, float]:
         if self._joy_axes_source == "video" and hasattr(self, "video_left_stick"):
@@ -6257,9 +6397,13 @@ class NavVizApp:
         if hasattr(self, "left_stick"):
             self.left_stick.reset()
             self.right_stick.reset()
+        if hasattr(self, "head_stick"):
+            self.head_stick.reset()
         if hasattr(self, "video_left_stick"):
             self.video_left_stick.reset()
             self.video_right_stick.reset()
+        if hasattr(self, "video_head_stick"):
+            self.video_head_stick.reset()
         self._update_joy_stream_ui(False)
         self._log_action("Stop stream", True, "摇杆推流已停止")
 
@@ -6267,9 +6411,13 @@ class NavVizApp:
         if hasattr(self, "left_stick"):
             self.left_stick.reset()
             self.right_stick.reset()
+        if hasattr(self, "head_stick"):
+            self.head_stick.reset()
         if hasattr(self, "video_left_stick"):
             self.video_left_stick.reset()
             self.video_right_stick.reset()
+        if hasattr(self, "video_head_stick"):
+            self.video_head_stick.reset()
 
     def _slam_cmd(self, fn, name: str) -> None:
         if not self.session.slam:
@@ -6418,16 +6566,18 @@ class NavVizApp:
         if not self.session.slam or not self.session.high:
             return
         self.session.set_gait(magicdog.GaitMode.GAIT_DOWN_CLIMB_STAIRS)
+        # Keep joystick stream closed during nav (same as navigation_example.cpp).
+        # Re-enabling here would reopen sendRockerCtl and can keep publishing zero
+        # velocity on the teleop channel, fighting the nav stack.
         self.session.high.disable_joy_stick()
         self._on_joy_stop()
         tgt = magicdog.NavTarget()
-        tgt.id = 1
+        tgt.id = self.session.next_nav_goal_id()
         tgt.frame_id = "map"
         tgt.goal = self._build_pose3d(
             self.goal_pose_x, self.goal_pose_y, self.goal_pose_yaw
         )
         st = self.session.slam.set_nav_target(tgt)
-        self.session.high.enable_joy_stick()
         if _status_ok(st):
             gx, gy = self.goal_pose_x.get(), self.goal_pose_y.get()
             gyaw = self.goal_pose_yaw.get()
@@ -6436,7 +6586,7 @@ class NavVizApp:
             self._log_action(
                 "导航到目标点",
                 True,
-                f"({gx:.2f},{gy:.2f}) yaw={gyaw:.2f}",
+                f"id={tgt.id} ({gx:.2f},{gy:.2f}) yaw={gyaw:.2f}; 摇杆已关闭",
             )
         else:
             self._log_action("导航到目标点", False, st.message)

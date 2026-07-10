@@ -162,6 +162,8 @@ flowchart LR
 | Get all ratios | `high.get_all_gait_speed_ratio()` | `GetAllGaitSpeedRatio` |
 | Set ratio | `high.set_gait_speed_ratio(GaitMode, GaitSpeedRatio)` | `SetGaitSpeedRatio` |
 | Execute | `high.execute_trick(TrickAction)` | `ExecuteTrick` |
+| Get head yaw | `high.get_current_head_position()` | `GetHeadPosition` |
+| Head stick (Motion / Video) | Start stream 时按摇杆 X 映射 Yaw（±60°）调用 `set_head_position` | `SetHeadPosition` |
 | Start stream | 20 Hz `high.send_joystick_command(JoystickCommand)` | `SendJoyStickCommand` |
 | Stop | 停止线程，摇杆回中发零 | — |
 
@@ -184,12 +186,19 @@ flowchart LR
 - **Get all ratios** 查询全部支持步态的比例；**Set ratio** 写入当前选中步态。
 - `GaitSpeedRatio` 字段：`straight_ratio`、`turn_ratio`、`lateral_ratio`。
 
+**Head yaw（头部偏航）**
+
+- Motion / Video 页 **Head** 摇杆：水平轴映射到头部 **Yaw**（约 ±60°）。
+- 需先 **Start stream**；约 4 Hz 调用 `set_head_position`（仅 yaw，roll/pitch=0）。
+- **Get head yaw**：查询当前头部 yaw 并显示。
+
 **摇杆轴**（`JoystickCommand`）：
 
 | 摇杆 | 字段 | 含义 |
 |------|------|------|
 | 左 | `left_x_axis`, `left_y_axis` | 横向、前进（Y 向上为正） |
-| 右 | `right_x_axis` | 偏航 / 转向（Video 页右摇杆仅水平） |
+| 右 | `right_x_axis` | 机身偏航 / 转向 |
+| Head | （非 JoystickCommand） | 头部 Yaw，经 `SetHeadPosition` |
 
 ---
 
@@ -224,10 +233,9 @@ flowchart LR
 **发起导航**（工具栏 / 左键双击，模式为「导航目标」）：
 
 1. `set_gait(GAIT_DOWN_CLIMB_STAIRS)`
-2. `disable_joy_stick()`
-3. 构造 `NavTarget`（`frame_id="map"`，目标来自「导航目标」行 X/Y/Yaw）
-4. `set_nav_target(tgt)`
-5. `enable_joy_stick()`
+2. `disable_joy_stick()` + 停止本地 20 Hz 推流（导航期间保持关闭，避免遥控通道持续发 0 速干扰导航）
+3. 构造 `NavTarget`（`id` 自增，从 1 起；Disconnect 后重置；`frame_id="map"`，目标来自「导航目标」行 X/Y/Yaw）
+4. `set_nav_target(tgt)`（**不再**立刻 `enable_joy_stick`；需遥控时再点 Start stream）
 
 **地图鼠标**（需先选「地图点击」模式）：
 
@@ -296,7 +304,7 @@ Connect 后 `get_display_controller()` 即可，无需 LCM。
 | Start / Stop | 后台线程 `VideoCapture` 读帧 |
 | 图像检测 | 下拉选择检测模式，叠加框 / 标记于预览画面 |
 | 统计栏 | 近 1 s 接收 FPS、流标注 FPS、帧数、读失败次数、源/显示分辨率、时长、检测摘要 |
-| 摇杆 | 与 Motion 共用推流；适合边看画面边控狗 |
+| 摇杆 | 左/右控机身 + Head 控 Yaw；与 Motion 共用推流 |
 
 - 切换检测模式会自动重置检测器状态；切换 Tab、Disconnect 或关闭窗口会自动 Stop RTSP。
 - 若相机路径非根路径，请写全 URL 或使用 `--rtsp-path`，例如 `rtsp://192.168.55.200:8082/stream`。
@@ -419,7 +427,7 @@ python3 viz_nav.py --help
 | OCR 导致 RTSP 卡住 | 已改为**后台 OCR 线程**，预览不应再冻结 |
 | OCR 不可用 / 很慢 / 小字检不出 | `pip install easyocr`；**靠近文字、让字占画面 1/4 以上**；包装编号建议 `export VIZ_NAV_OCR_LANGS=en`；仍失败试 `export VIZ_NAV_OCR_CONF=0.15 VIZ_NAV_OCR_UPSCALE_MIN=1280` |
 | ArUco 无反应 | 需 OpenCV contrib aruco；使用 DICT_4X4_50 打印标记，保持平整、足够大 |
-| 摇杆无响应 | 需 **Connect** 且 **Start stream**；导航发目标时会短暂 `disable_joy_stick`，需重新 Start stream |
+| 摇杆无响应 | 需 **Connect** 且 **Start stream**；发导航目标后摇杆通道保持关闭，需再点 Start stream 才会 `enable_joy_stick` |
 | Log 区太小 | 向上拖动 Tab 与 Log 之间的分隔条 |
 
 ---
